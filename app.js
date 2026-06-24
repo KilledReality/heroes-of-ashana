@@ -4540,7 +4540,7 @@ function showRollPopup(log) {
 function createRollDie(sides) {
   const visual = diceVisualClass(sides);
   const die = el("div", `roll-die ${visual}`);
-  die.append(el("span", "roll-die-face", "?"), el("small", "roll-die-type", `d${sides}`));
+  die.append(diceShapeSvg(sides), el("span", "roll-die-face", "?"), el("small", "roll-die-type", `d${sides}`));
   return die;
 }
 
@@ -4549,16 +4549,61 @@ function diceVisualClass(sides) {
   return "die-poly";
 }
 
+function diceShapeSvg(sides) {
+  const svg = svgEl("svg", { class: "roll-die-shape", viewBox: "0 0 100 100", "aria-hidden": "true", focusable: "false" });
+  const body = svgEl("polygon", { class: "die-body", points: diceShapePoints(sides) });
+  svg.append(body);
+  const facets = diceFacetPath(sides);
+  if (facets) svg.append(svgEl("path", { class: "die-facets", d: facets }));
+  if (Number(sides) === 6) {
+    svg.innerHTML = "";
+    svg.append(svgEl("rect", { class: "die-body", x: "7", y: "7", width: "86", height: "86", rx: "15" }));
+    svg.append(svgEl("path", { class: "die-facets", d: "M50 8 L50 92 M8 50 L92 50 M20 20 L80 80 M80 20 L20 80" }));
+  }
+  if (Number(sides) === 100) {
+    svg.innerHTML = "";
+    svg.append(svgEl("circle", { class: "die-body", cx: "50", cy: "50", r: "43" }));
+    svg.append(svgEl("path", { class: "die-facets", d: "M50 7 C34 24 34 76 50 93 M50 7 C66 24 66 76 50 93 M7 50 H93 M18 28 C37 38 63 38 82 28 M18 72 C37 62 63 62 82 72" }));
+  }
+  return svg;
+}
+
+function diceShapePoints(sides) {
+  const value = Number(sides);
+  if (value === 4) return "50,5 94,91 6,91";
+  if (value === 8) return "50,2 96,50 50,98 4,50";
+  if (value === 10) return "50,2 92,27 78,94 22,94 8,27";
+  if (value === 12) return "50,3 76,10 96,33 91,68 65,94 35,94 9,68 4,33 24,10";
+  if (value === 20) return "50,2 76,9 96,30 96,60 78,88 50,98 22,88 4,60 4,30 24,9";
+  return "50,2 82,13 98,42 89,76 62,96 38,96 11,76 2,42 18,13";
+}
+
+function diceFacetPath(sides) {
+  const value = Number(sides);
+  if (value === 4) return "M50 5 L50 91 M50 38 L6 91 M50 38 L94 91";
+  if (value === 8) return "M50 2 L50 98 M4 50 H96 M50 2 L4 50 M50 2 L96 50 M50 98 L4 50 M50 98 L96 50";
+  if (value === 10) return "M50 2 L50 94 M8 27 L92 27 M22 94 L50 45 L78 94 M8 27 L50 45 L92 27";
+  if (value === 12) return "M50 3 L65 94 M50 3 L35 94 M4 33 L96 33 M9 68 L91 68 M24 10 L50 50 L76 10 M35 94 L50 50 L65 94";
+  if (value === 20) return "M50 2 L50 98 M4 30 L96 60 M96 30 L4 60 M24 9 L78 88 M76 9 L22 88 M4 30 L50 46 L96 30 M4 60 L50 46 L96 60 M22 88 L50 46 L78 88";
+  return "M50 2 L50 96 M2 42 L98 42 M11 76 L89 76 M18 13 L50 50 L82 13 M38 96 L50 50 L62 96";
+}
+
+function svgEl(tag, attributes = {}) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
+  return node;
+}
+
 function animateRollDie(die, finalFace, sides, delay = 0) {
   const face = die.querySelector(".roll-die-face");
   const safeSides = Math.max(2, Number(sides || 20));
   setTimeout(() => {
     die.classList.add("rolling");
     const startedAt = performance.now();
-    const duration = 980;
+    const duration = 1180;
     let lastFaceChange = 0;
     const step = (now) => {
-      if (now - lastFaceChange > 74) {
+      if (now - lastFaceChange > 135) {
         face.textContent = 1 + Math.floor(Math.random() * safeSides);
         lastFaceChange = now;
       }
