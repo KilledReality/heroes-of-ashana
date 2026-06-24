@@ -4511,9 +4511,39 @@ function rollFormula(formula, label = "") {
 
 function showRollPopup(log) {
   const old = document.querySelector(".roll-popup");
-  if (old) old.remove();
+  if (old) {
+    old.cleanupRollAnimation?.();
+    old.remove();
+  }
   const popup = el("div", "roll-popup");
   const parsed = parseRoll(log.formula) ?? { sides: Math.max(...log.rolls, 20), modifier: 0 };
+  const animation = createRollAnimation(log, parsed);
+  popup.append(
+    el("p", "eyebrow", log.actor),
+    el("h3", "", log.label || "Бросок"),
+    animation.node,
+    el("strong", "roll-popup-total", log.total),
+    el("p", "muted", `${log.formula} → [${log.rolls.join(", ")}]`)
+  );
+  const close = button("Закрыть", "small-button", () => {
+    animation.cleanup?.();
+    popup.remove();
+  });
+  popup.append(close);
+  popup.cleanupRollAnimation = animation.cleanup;
+  document.body.append(popup);
+  setTimeout(() => {
+    animation.cleanup?.();
+    popup.remove();
+  }, 5600);
+}
+
+function createRollAnimation(log, parsed) {
+  if (globalThis.THREE?.WebGLRenderer) return createThreeRollStage(log, parsed);
+  return createSvgRollStage(log, parsed);
+}
+
+function createSvgRollStage(log, parsed) {
   const diceStage = el("div", `roll-animation-stage ${log.rolls.length > 1 ? "multi" : ""}`);
   const visibleRolls = log.rolls.slice(0, 8);
   visibleRolls.forEach((rollValue, index) => {
@@ -4524,17 +4554,149 @@ function showRollPopup(log) {
   if (log.rolls.length > visibleRolls.length) {
     diceStage.append(el("div", "roll-extra-dice", `+${log.rolls.length - visibleRolls.length}`));
   }
-  popup.append(
-    el("p", "eyebrow", log.actor),
-    el("h3", "", log.label || "Бросок"),
-    diceStage,
-    el("strong", "roll-popup-total", log.total),
-    el("p", "muted", `${log.formula} → [${log.rolls.join(", ")}]`)
+  return { node: diceStage, cleanup: () => {} };
+}
+
+function createThreeRollStage(log, parsed) {
+  const THREE = globalThis.THREE;
+  const stage = el("div", "roll-three-stage");
+  const resultBadge = el("div", "roll-three-result", "?");
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  const width = 300;
+  const height = log.rolls.length > 1 ? 190 : 170;
+  renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
+  renderer.setSize(width, height, false);
+  renderer.shadowMap.enabled = true;
+  stage.append(renderer.domElement, resultBadge);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
+  camera.position.set(0, 2.8, 6.1);
+  camera.lookAt(0, 0.25, 0);
+  scene.add(new THREE.HemisphereLight(0xfff1cf, 0x1b2426, 2.1));
+  const keyLight = new THREE.DirectionalLight(0xffdf96, 3.4);
+  keyLight.position.set(2.2, 4.4, 3.2);
+  keyLight.castShadow = true;
+  scene.add(keyLight);
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(3.2, 64),
+    new THREE.ShadowMaterial({ opacity: 0.22 })
   );
-  const close = button("Закрыть", "small-button", () => popup.remove());
-  popup.append(close);
-  document.body.append(popup);
-  setTimeout(() => popup.remove(), 5200);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -1.08;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  const visibleRolls = log.rolls.slice(0, 5);
+  const spacing = visibleRolls.length > 1 ? 1.35 : 0;
+  const groups = visibleRolls.map((rollValue, index) => {
+    const group = createThreeDieGroup(parsed.sides);
+    group.position.x = (index - (visibleRolls.length - 1) / 2) * spacing;
+    group.position.y = 1.8 + Math.random() * 0.5;
+    group.userData = {
+      finalValue: rollValue,
+      startRotation: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
+      spin: new THREE.Vector3(8 + Math.random() * 3, 10 + Math.random() * 4, 7 + Math.random() * 3),
+      finalRotation: new THREE.Euler(Math.random() * 0.55, Math.random() * 0.55, Math.random() * 0.55),
+      delay: index * 90,
+    };
+    group.rotation.copy(group.userData.startRotation);
+    scene.add(group);
+    return group;
+  });
+
+  let frameId = 0;
+  let stopped = false;
+  const duration = 1700;
+  const startedAt = performance.now();
+  const animate = (now) => {
+    if (stopped) return;
+    let allDone = true;
+    groups.forEach((group) => {
+      const t = Math.max(0, Math.min(1, (now - startedAt - group.userData.delay) / duration));
+      if (t < 1) allDone = false;
+      const eased = 1 - Math.pow(1 - t, 3);
+      const bounce = Math.sin(t * Math.PI * 2.8) * (1 - eased) * 0.58;
+      group.position.y = -0.2 + (1 - eased) * 2.2 + Math.max(0, bounce);
+      group.position.x += Math.sin(now / 180 + group.userData.delay) * 0.0015 * (1 - eased);
+      group.rotation.x = group.userData.startRotation.x + group.userData.spin.x * (1 - Math.pow(1 - t, 2)) + group.userData.finalRotation.x * eased;
+      group.rotation.y = group.userData.startRotation.y + group.userData.spin.y * (1 - Math.pow(1 - t, 2)) + group.userData.finalRotation.y * eased;
+      group.rotation.z = group.userData.startRotation.z + group.userData.spin.z * (1 - Math.pow(1 - t, 2)) + group.userData.finalRotation.z * eased;
+      group.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.04);
+    });
+    renderer.render(scene, camera);
+    if (allDone) {
+      resultBadge.textContent = visibleRolls.length === 1 ? visibleRolls[0] : log.total;
+      resultBadge.classList.add("shown");
+    }
+    frameId = requestAnimationFrame(animate);
+  };
+  frameId = requestAnimationFrame(animate);
+
+  return {
+    node: stage,
+    cleanup: () => {
+      stopped = true;
+      cancelAnimationFrame(frameId);
+      renderer.dispose();
+      stage.remove();
+    },
+  };
+}
+
+function createThreeDieGroup(sides) {
+  const THREE = globalThis.THREE;
+  const group = new THREE.Group();
+  const geometry = threeDiceGeometry(sides);
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xd4a74f,
+    roughness: 0.48,
+    metalness: 0.18,
+    flatShading: true,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  group.add(mesh);
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geometry),
+    new THREE.LineBasicMaterial({ color: 0x5b3d16, transparent: true, opacity: 0.58 })
+  );
+  group.add(edges);
+  return group;
+}
+
+function threeDiceGeometry(sides) {
+  const THREE = globalThis.THREE;
+  const value = Number(sides);
+  if (value === 4) return new THREE.TetrahedronGeometry(1.05, 0);
+  if (value === 6) return new THREE.BoxGeometry(1.45, 1.45, 1.45);
+  if (value === 8) return new THREE.OctahedronGeometry(1.12, 0);
+  if (value === 10) return bipyramidGeometry(10, 1.03, 1.45);
+  if (value === 12) return new THREE.DodecahedronGeometry(1.1, 0);
+  if (value === 20) return new THREE.IcosahedronGeometry(1.12, 0);
+  if (value === 100) return new THREE.SphereGeometry(1.06, 18, 12);
+  return new THREE.IcosahedronGeometry(1.08, 0);
+}
+
+function bipyramidGeometry(segments = 10, radius = 1, height = 1.35) {
+  const THREE = globalThis.THREE;
+  const vertices = [[0, height / 2, 0], [0, -height / 2, 0]];
+  for (let index = 0; index < segments; index += 1) {
+    const angle = (Math.PI * 2 * index) / segments;
+    vertices.push([Math.cos(angle) * radius, 0, Math.sin(angle) * radius]);
+  }
+  const indices = [];
+  for (let index = 0; index < segments; index += 1) {
+    const current = 2 + index;
+    const next = 2 + ((index + 1) % segments);
+    indices.push(0, current, next, 1, next, current);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices.flat(), 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function createRollDie(sides) {

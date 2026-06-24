@@ -2104,6 +2104,56 @@ label {
   perspective: 900px;
 }
 
+.roll-three-stage {
+  min-height: 176px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(212, 167, 79, 0.16);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 70%, rgba(212, 167, 79, 0.1), transparent 46%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(0, 0, 0, 0.08));
+}
+
+.roll-three-stage canvas {
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  display: block;
+}
+
+.roll-three-result {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  min-width: 70px;
+  min-height: 70px;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%) scale(0.82);
+  opacity: 0;
+  color: #17120a;
+  border: 2px solid rgba(244, 226, 185, 0.78);
+  border-radius: 18px;
+  background: rgba(242, 210, 118, 0.92);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  font-size: 2.45rem;
+  font-weight: 950;
+  pointer-events: none;
+  transition:
+    opacity 220ms ease,
+    transform 300ms cubic-bezier(0.18, 0.84, 0.28, 1.2);
+}
+
+.roll-three-result.shown {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
 .roll-die {
   position: relative;
   isolation: isolate;
