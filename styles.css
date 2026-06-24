@@ -367,24 +367,32 @@ textarea:focus {
 .tag-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: 7px;
 }
 
 .tag {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  padding: 4px 8px;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 0;
+  padding: 5px 9px;
   border: 1px solid rgba(212, 167, 79, 0.28);
-  border-radius: 999px;
+  border-radius: 8px;
   color: var(--paper-strong);
   background: rgba(212, 167, 79, 0.09);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
+  line-height: 1.15;
+  text-align: center;
+  overflow-wrap: anywhere;
+  align-self: flex-start;
 }
 
 .tag-button {
   width: auto;
-  min-height: 26px;
+  min-height: 0;
   cursor: pointer;
 }
 
