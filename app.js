@@ -387,6 +387,7 @@ let activeCharacterTab = "summary";
 let activeWikiTag = "";
 let activeWikiCategoryId = "";
 let wikiCategorySearchTerm = "";
+let wikiDraft = null;
 let skillSearchTerm = "";
 let activeGalleryTag = "";
 let mapZoom = state.map.zoom || 1;
@@ -817,10 +818,89 @@ function visibleQuests() {
   return state.quests.filter((quest) => quest.status !== "hidden" || isAdmin);
 }
 
-function setView(view) {
+function setView(view, options = {}) {
+  if (!options.skipWikiGuard && view !== currentView && !confirmWikiEditorLeave()) return false;
   currentView = view;
   navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   render();
+  return true;
+}
+
+function hasUnsavedWikiDraft() {
+  return Boolean(wikiDraft?.dirty);
+}
+
+function clearWikiDraft(articleId = null) {
+  if (articleId && wikiDraft?.articleId !== articleId) return;
+  wikiDraft = null;
+}
+
+function confirmWikiEditorLeave() {
+  if (!hasUnsavedWikiDraft()) return true;
+  const leave = confirm("Есть несохраненные изменения в Wiki-статье. Если перейти дальше, они пропадут. Перейти без сохранения?");
+  if (leave) clearWikiDraft();
+  return leave;
+}
+
+function guardedWikiNavigation(action) {
+  if (!confirmWikiEditorLeave()) return false;
+  action();
+  render();
+  return true;
+}
+
+function wikiFormSnapshotFromArticle(article) {
+  const categoryId = article.categoryId || categoryAliases[article.category] || wikiCategories[0]?.id || "places";
+  const style = { ...defaultImageStyle(), ...(article.imageStyle ?? {}) };
+  return {
+    title: article.title || "",
+    categoryId,
+    tags: Array.isArray(article.tags) ? article.tags.join(", ") : String(article.tags ?? ""),
+    public: Boolean(article.public),
+    body: article.body || "",
+    gmBody: article.gmBody || "",
+    image: article.image || "",
+    imageStyle: {
+      aspect: style.aspect,
+      fit: style.fit,
+      x: Number(style.x),
+      y: Number(style.y),
+      zoom: Number(style.zoom),
+    },
+  };
+}
+
+function wikiFormSnapshotSignature(snapshot) {
+  return JSON.stringify({
+    title: snapshot.title || "",
+    categoryId: snapshot.categoryId || "",
+    tags: snapshot.tags || "",
+    public: Boolean(snapshot.public),
+    body: snapshot.body || "",
+    gmBody: snapshot.gmBody || "",
+    image: snapshot.image || "",
+    imageStyle: {
+      aspect: snapshot.imageStyle?.aspect || "wide",
+      fit: snapshot.imageStyle?.fit || "cover",
+      x: Number(snapshot.imageStyle?.x ?? 50),
+      y: Number(snapshot.imageStyle?.y ?? 50),
+      zoom: Number(snapshot.imageStyle?.zoom ?? 1),
+    },
+  });
+}
+
+function rememberWikiDraft(articleId, baseSnapshot, snapshot) {
+  const baseSignature = wikiFormSnapshotSignature(baseSnapshot);
+  const currentSignature = wikiFormSnapshotSignature(snapshot);
+  if (baseSignature === currentSignature) {
+    clearWikiDraft(articleId);
+    return;
+  }
+  wikiDraft = { articleId, dirty: true, values: snapshot, baseSignature };
+}
+
+function wikiDraftValuesFor(articleId) {
+  return wikiDraft?.articleId === articleId ? wikiDraft.values : null;
 }
 
 function setAdminMode(value, options = {}) {
@@ -942,10 +1022,11 @@ function renderWiki() {
   const layout = el("div", "wiki-layout");
   const list = el("aside", "panel list-panel");
   const indexButton = button("Мапа Wiki", "list-button", () => {
-    activeWikiId = WIKI_INDEX_ID;
-    activeWikiTag = "";
-    activeWikiCategoryId = "";
-    render();
+    guardedWikiNavigation(() => {
+      activeWikiId = WIKI_INDEX_ID;
+      activeWikiTag = "";
+      activeWikiCategoryId = "";
+    });
   });
   indexButton.classList.toggle("active", activeWikiId === WIKI_INDEX_ID && !activeWikiCategoryId);
   list.append(indexButton);
@@ -953,10 +1034,11 @@ function renderWiki() {
   list.append(el("p", "eyebrow", "Категории"));
   wikiCategories.forEach((category) => {
     const categoryButton = button(category.title, "list-button", () => {
-      activeWikiCategoryId = category.id;
-      activeWikiId = WIKI_INDEX_ID;
-      wikiCategorySearchTerm = "";
-      render();
+      guardedWikiNavigation(() => {
+        activeWikiCategoryId = category.id;
+        activeWikiId = WIKI_INDEX_ID;
+        wikiCategorySearchTerm = "";
+      });
     });
     categoryButton.classList.toggle("active", activeWikiCategoryId === category.id);
     list.append(categoryButton);
@@ -966,10 +1048,11 @@ function renderWiki() {
   const tagPanel = el("div", "tag-row");
   allWikiTags().forEach((tagName) => {
     const tagButton = button(tagName, `tag tag-button ${activeWikiTag === tagName ? "active" : ""}`, () => {
-      activeWikiTag = activeWikiTag === tagName ? "" : tagName;
-      activeWikiId = WIKI_INDEX_ID;
-      activeWikiCategoryId = "";
-      render();
+      guardedWikiNavigation(() => {
+        activeWikiTag = activeWikiTag === tagName ? "" : tagName;
+        activeWikiId = WIKI_INDEX_ID;
+        activeWikiCategoryId = "";
+      });
     });
     tagPanel.append(tagButton);
   });
@@ -978,8 +1061,9 @@ function renderWiki() {
   list.append(el("p", "eyebrow", "Статьи"));
   articles.forEach((article) => {
     const item = button(article.title, "list-button", () => {
-      activeWikiId = article.id;
-      render();
+      guardedWikiNavigation(() => {
+        activeWikiId = article.id;
+      });
     });
     item.classList.toggle("active", article.id === activeWikiId);
     list.append(item);
@@ -1031,18 +1115,20 @@ function wikiIndex(articles) {
     const links = el("div", "wiki-link-list");
     categoryArticles.slice(0, 6).forEach((article) => {
       links.append(button(article.title, "wiki-link", () => {
-        activeWikiId = article.id;
-        activeWikiCategoryId = "";
-        render();
+        guardedWikiNavigation(() => {
+          activeWikiId = article.id;
+          activeWikiCategoryId = "";
+        });
       }));
     });
     card.append(links.children.length ? links : el("p", "muted", "Пока нет статей"));
     card.addEventListener("click", (event) => {
       if (event.target.closest("button")) return;
-      activeWikiCategoryId = category.id;
-      activeWikiId = WIKI_INDEX_ID;
-      wikiCategorySearchTerm = "";
-      render();
+      guardedWikiNavigation(() => {
+        activeWikiCategoryId = category.id;
+        activeWikiId = WIKI_INDEX_ID;
+        wikiCategorySearchTerm = "";
+      });
     });
     grid.append(card);
   });
@@ -1060,8 +1146,9 @@ function wikiCategoryPage(categoryId, articles) {
   searchForm.append(search, button("Найти", "small-button", null, "submit"));
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    wikiCategorySearchTerm = search.value;
-    render();
+    guardedWikiNavigation(() => {
+      wikiCategorySearchTerm = search.value;
+    });
   });
 
   const categoryArticles = articles
@@ -1089,9 +1176,10 @@ function wikiCategoryPage(categoryId, articles) {
       el("p", "", article.body.slice(0, 220) + (article.body.length > 220 ? "..." : ""))
     );
     card.addEventListener("click", () => {
-      activeWikiId = article.id;
-      activeWikiCategoryId = "";
-      render();
+      guardedWikiNavigation(() => {
+        activeWikiId = article.id;
+        activeWikiCategoryId = "";
+      });
     });
     grid.append(card);
   });
@@ -1138,6 +1226,7 @@ function allWikiTags() {
 }
 
 function createWikiArticle() {
+  if (!confirmWikiEditorLeave()) return;
   const category = resolveWikiCategoryForNewArticle();
   if (!category) return;
   const article = normalizeWikiArticle({
@@ -2208,8 +2297,15 @@ function wikiCreator() {
 
 function wikiEditor(article) {
   const box = el("div", "admin-panel");
+  const draftValues = wikiDraftValuesFor(article.id);
+  const formArticle = {
+    ...article,
+    ...(draftValues ?? {}),
+    tags: draftValues?.tags ?? article.tags.join(", "),
+    category: wikiCategoryTitle(draftValues?.categoryId ?? article.categoryId),
+  };
   box.append(el("h3", "", "Редактирование"), wikiForm(
-    { ...article, tags: article.tags.join(", ") },
+    formArticle,
     (values) => {
       Object.assign(article, {
         title: values.title,
@@ -2222,13 +2318,16 @@ function wikiEditor(article) {
         imageStyle: values.imageStyle,
         public: values.public,
       });
+      clearWikiDraft(article.id);
       saveState();
       render();
-    }
+    },
+    { draftArticleId: article.id, baseSnapshot: wikiFormSnapshotFromArticle(article) }
   ));
   box.append(actionRow([
     button("Удалить статью", "ghost-button", () => {
       if (!confirm(`Удалить статью "${article.title}"?`)) return;
+      clearWikiDraft(article.id);
       state.wiki = state.wiki.filter((item) => item.id !== article.id);
       activeWikiId = WIKI_INDEX_ID;
       saveState();
@@ -2238,7 +2337,7 @@ function wikiEditor(article) {
   return box;
 }
 
-function wikiForm(article, onSubmit) {
+function wikiForm(article, onSubmit, options = {}) {
   const form = el("form", "form-grid");
   const title = input(article.title);
   const category = document.createElement("select");
@@ -2285,11 +2384,37 @@ function wikiForm(article, onSubmit) {
   }
   [aspect, fit, posX, posY, zoom].forEach((control) => control.addEventListener("input", updateImagePreview));
   updateImagePreview();
+  const baseSnapshot = options.baseSnapshot ?? wikiFormSnapshotFromArticle(article);
+  function currentWikiFormSnapshot() {
+    return {
+      title: title.value,
+      categoryId: category.value,
+      tags: tagsInput.value,
+      public: publicInput.checked,
+      body: body.value,
+      gmBody: gmBody.value,
+      image: imageValue,
+      imageStyle: {
+        aspect: aspect.value,
+        fit: fit.value,
+        x: Number(posX.value),
+        y: Number(posY.value),
+        zoom: Number(zoom.value),
+      },
+    };
+  }
+  function updateWikiDraft() {
+    if (!options.draftArticleId) return;
+    rememberWikiDraft(options.draftArticleId, baseSnapshot, currentWikiFormSnapshot());
+  }
+  form.addEventListener("input", updateWikiDraft);
+  form.addEventListener("change", updateWikiDraft);
   imageInput.addEventListener("change", async () => {
     const file = imageInput.files?.[0];
     if (!file) return;
     imageValue = await imageFileToUrl(file, "wiki");
     updateImagePreview();
+    updateWikiDraft();
   });
 
   form.append(
@@ -3184,6 +3309,15 @@ function escapeSvg(value) {
 
 navItems.forEach((item) => item.addEventListener("click", () => setView(item.dataset.view)));
 globalSearch.addEventListener("input", () => {
+  if (currentView === "wiki" && hasUnsavedWikiDraft()) {
+    const nextSearchTerm = globalSearch.value;
+    globalSearch.value = searchTerm;
+    if (!confirmWikiEditorLeave()) return;
+    searchTerm = nextSearchTerm;
+    globalSearch.value = nextSearchTerm;
+    render();
+    return;
+  }
   searchTerm = globalSearch.value;
   render();
 });
@@ -3194,6 +3328,7 @@ activeCharacterSelect.addEventListener("change", () => {
 resetViewButton.addEventListener("click", () => setView("dashboard"));
 quickLoginButton.addEventListener("click", () => {
   if (supabaseUser) {
+    if (!confirmWikiEditorLeave()) return;
     signOutSupabase();
   } else {
     loginError.hidden = true;
@@ -3203,6 +3338,11 @@ quickLoginButton.addEventListener("click", () => {
   }
 });
 cancelLogin.addEventListener("click", () => loginDialog.close());
+window.addEventListener("beforeunload", (event) => {
+  if (!hasUnsavedWikiDraft()) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const email = document.querySelector("#loginEmail").value.trim();
