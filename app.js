@@ -198,7 +198,7 @@ const problemStatuses = [
   ["hidden", "Скрыта"],
 ];
 
-const ashanaMonths = [
+const defaultAshanaMonths = [
   "Золотого Пепла",
   "Серебряного Дождя",
   "Медного Листа",
@@ -239,6 +239,7 @@ const seedData = {
     currentRegion: "Северные рубежи Короны Арвейна",
     currentDate: "17 день месяца Золотого Пепла",
     ashanaDate: { year: 1, month: 1, day: 17 },
+    monthNames: defaultAshanaMonths,
     version: 2,
   },
   wiki: [
@@ -726,7 +727,8 @@ function normalizeState(raw) {
     meta: { ...seedData.meta, ...(raw.meta ?? {}), version: 2 },
   };
   normalized.meta.ashanaDate = normalizeAshanaDate(normalized.meta.ashanaDate);
-  normalized.meta.currentDate = formatAshanaDate(normalized.meta.ashanaDate);
+  normalized.meta.monthNames = normalizeMonthNames(normalized.meta.monthNames);
+  normalized.meta.currentDate = formatAshanaDate(normalized.meta.ashanaDate, true, normalized.meta.monthNames);
   normalized.wiki = (raw.wiki ?? seedData.wiki).map(normalizeWikiArticle);
   normalized.characters = (raw.characters ?? seedData.characters).map(normalizeCharacter);
   if (!normalized.characters.some((character) => character.id === "richie-goldmann")) {
@@ -762,6 +764,19 @@ function normalizeAshanaDate(date) {
   };
 }
 
+function normalizeMonthNames(names) {
+  const list = Array.isArray(names) ? names : [];
+  return defaultAshanaMonths.map((fallback, index) => String(list[index] || fallback).trim() || fallback);
+}
+
+function campaignMonthNames() {
+  return normalizeMonthNames(state?.meta?.monthNames);
+}
+
+function monthOptions() {
+  return campaignMonthNames().map((name, index) => [String(index + 1), `${index + 1}. ${name}`]);
+}
+
 function ashanaDateIndex(date) {
   const normalized = normalizeAshanaDate(date);
   return (normalized.year - 1) * 360 + (normalized.month - 1) * 36 + (normalized.day - 1);
@@ -776,9 +791,10 @@ function ashanaDateFromIndex(index) {
   };
 }
 
-function formatAshanaDate(date, withYear = true) {
+function formatAshanaDate(date, withYear = true, monthNames = null) {
   const normalized = normalizeAshanaDate(date);
-  const monthName = ashanaMonths[normalized.month - 1] ?? `Месяц ${normalized.month}`;
+  const names = monthNames ? normalizeMonthNames(monthNames) : campaignMonthNames();
+  const monthName = names[normalized.month - 1] ?? `Месяц ${normalized.month}`;
   const year = withYear ? `, ${normalized.year} год` : "";
   return `${normalized.day} день месяца ${monthName}${year}`;
 }
@@ -3480,6 +3496,7 @@ function openSettlement(settlementId) {
 function renderCalendar() {
   const root = el("div");
   const selectedDate = ashanaDateFromKey(activeCalendarDateKey || ashanaDateKey(state.meta.ashanaDate));
+  const monthNames = campaignMonthNames();
   const action = isAdmin
     ? actionRow([
         button("+1 день", "primary-button", () => shiftCurrentDate(1)),
@@ -3495,7 +3512,7 @@ function renderCalendar() {
     el("h3", "", formatAshanaDate(state.meta.ashanaDate)),
     compactBadges([ashanaWeekday(state.meta.ashanaDate), `${ashanaWeekNumber(state.meta.ashanaDate)} неделя`, `${state.meta.ashanaDate.year} год`]),
     metricGrid([
-      ["Месяц", ashanaMonths[state.meta.ashanaDate.month - 1]],
+      ["Месяц", `${state.meta.ashanaDate.month}. ${monthNames[state.meta.ashanaDate.month - 1]}`],
       ["День", state.meta.ashanaDate.day],
       ["Неделя", `${ashanaWeekNumber(state.meta.ashanaDate)} / 4`],
       ["День года", (state.meta.ashanaDate.month - 1) * 36 + state.meta.ashanaDate.day],
@@ -3507,19 +3524,24 @@ function renderCalendar() {
       button("+9 дней", "ghost-button", () => shiftCurrentDate(9)),
     ]));
     overview.append(inlineEditor("Поставить точную дату", calendarDateEditor()));
+    overview.append(inlineEditor("Названия месяцев", monthNamesEditor()));
   }
 
   const monthPanel = el("section", "panel calendar-month");
-  monthPanel.append(el("p", "eyebrow", "Месяц"), el("h3", "", ashanaMonths[selectedDate.month - 1]));
+  monthPanel.append(el("p", "eyebrow", "Месяц"), el("h3", "", `${selectedDate.month}. ${monthNames[selectedDate.month - 1]}`));
+  const prevMonth = button("Пред. месяц", "ghost-button", () => shiftCalendarMonth(-1));
+  const nextMonth = button("След. месяц", "ghost-button", () => shiftCalendarMonth(1));
+  prevMonth.disabled = selectedDate.month <= 1;
+  nextMonth.disabled = selectedDate.month >= 10;
   const monthControls = actionRow([
-    button("Пред. месяц", "ghost-button", () => shiftCalendarMonth(-1)),
+    prevMonth,
     button("Текущий месяц", "ghost-button", () => {
       activeCalendarDateKey = ashanaDateKey(state.meta.ashanaDate);
       render();
     }),
-    button("След. месяц", "ghost-button", () => shiftCalendarMonth(1)),
+    nextMonth,
   ]);
-  monthPanel.append(monthControls);
+  monthPanel.append(monthControls, monthTracker(selectedDate));
   const days = el("div", "calendar-days");
   for (let day = 1; day <= 36; day += 1) {
     const date = { year: selectedDate.year, month: selectedDate.month, day };
@@ -3570,9 +3592,24 @@ function shiftCurrentDate(delta) {
 
 function shiftCalendarMonth(delta) {
   const selected = ashanaDateFromKey(activeCalendarDateKey);
-  const next = ashanaDateFromIndex(ashanaDateIndex({ ...selected, day: 1 }) + delta * 36);
-  activeCalendarDateKey = ashanaDateKey({ ...next, day: Math.min(selected.day, 36) });
+  const nextMonth = selected.month + delta;
+  if (nextMonth < 1 || nextMonth > 10) return;
+  activeCalendarDateKey = ashanaDateKey({ ...selected, month: nextMonth, day: Math.min(selected.day, 36) });
   render();
+}
+
+function monthTracker(selectedDate) {
+  const track = el("div", "calendar-month-track");
+  campaignMonthNames().forEach((name, index) => {
+    const monthNumber = index + 1;
+    const item = button(String(monthNumber), `month-track-item ${monthNumber === selectedDate.month ? "active" : ""} ${monthNumber === state.meta.ashanaDate.month ? "current" : ""}`, () => {
+      activeCalendarDateKey = ashanaDateKey({ ...selectedDate, month: monthNumber });
+      render();
+    });
+    item.title = name;
+    track.append(item);
+  });
+  return track;
 }
 
 function eventsForDate(date) {
@@ -3603,7 +3640,7 @@ function calendarEventsList(events) {
 function calendarDateEditor() {
   const form = el("form", "form-grid compact-form");
   const year = input(state.meta.ashanaDate.year);
-  const month = selectInput(ashanaMonths.map((name, index) => [String(index + 1), name]), String(state.meta.ashanaDate.month));
+  const month = selectInput(monthOptions(), String(state.meta.ashanaDate.month));
   const day = input(state.meta.ashanaDate.day);
   day.type = "number";
   day.min = 1;
@@ -3625,13 +3662,31 @@ function calendarDateEditor() {
   return form;
 }
 
+function monthNamesEditor() {
+  const form = el("form", "form-grid month-name-editor");
+  const controls = campaignMonthNames().map((name, index) => {
+    const control = input(name);
+    form.append(labelWrap(`${index + 1} месяц`, control));
+    return control;
+  });
+  form.append(actionRow([button("Сохранить месяцы", "primary-button", null, "submit")], "span-2"));
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.meta.monthNames = normalizeMonthNames(controls.map((control) => control.value));
+    state.meta.currentDate = formatAshanaDate(state.meta.ashanaDate);
+    saveState();
+    render();
+  });
+  return form;
+}
+
 function calendarEventEditor(event, create = false) {
   const form = el("form", "form-grid");
   const fields = linkedEntityFields(event);
   const title = input(event.title);
   const type = selectInput(calendarEventTypes, event.type);
   const year = input(event.date.year);
-  const month = selectInput(ashanaMonths.map((name, index) => [String(index + 1), name]), String(event.date.month));
+  const month = selectInput(monthOptions(), String(event.date.month));
   const day = input(event.date.day);
   const summary = textarea(event.summary);
   const gmNotes = textarea(event.gmNotes);
@@ -3768,7 +3823,7 @@ function sessionEditor(session) {
   const title = input(session.title);
   const sessionNumber = input(session.sessionNumber);
   const year = input(session.date.year);
-  const month = selectInput(ashanaMonths.map((name, index) => [String(index + 1), name]), String(session.date.month));
+  const month = selectInput(monthOptions(), String(session.date.month));
   const day = input(session.date.day);
   const players = input(session.players);
   const summary = textarea(session.summary);
@@ -4165,7 +4220,7 @@ function campaignEditor() {
   const name = input(state.meta.campaignName);
   const region = input(state.meta.currentRegion);
   const year = input(state.meta.ashanaDate.year);
-  const month = selectInput(ashanaMonths.map((monthName, index) => [String(index + 1), monthName]), String(state.meta.ashanaDate.month));
+  const month = selectInput(monthOptions(), String(state.meta.ashanaDate.month));
   const day = input(state.meta.ashanaDate.day);
   year.type = "number";
   year.min = 1;

@@ -602,6 +602,16 @@ textarea:focus {
   background: rgba(255, 255, 255, 0.07);
 }
 
+.primary-button:disabled,
+.ghost-button:disabled,
+.small-button:disabled,
+.icon-button:disabled,
+.tab-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  transform: none;
+}
+
 .small-button {
   min-height: 32px;
   padding: 6px 10px;
@@ -1055,11 +1065,25 @@ label {
   align-items: start;
 }
 
+.calendar-layout > * {
+  min-width: 0;
+}
+
 .calendar-current,
 .calendar-day-panel,
 .session-detail {
   display: grid;
   gap: 14px;
+}
+
+.calendar-current .metric {
+  min-width: 0;
+}
+
+.calendar-current .metric strong {
+  font-size: clamp(1.35rem, 2.2vw, 1.7rem);
+  line-height: 1.18;
+  overflow-wrap: anywhere;
 }
 
 .calendar-current h3,
@@ -1068,6 +1092,7 @@ label {
 .session-detail h3,
 .session-list h3 {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .calendar-month {
@@ -1083,6 +1108,38 @@ label {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
+}
+
+.calendar-month-track {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.month-track-item {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-weight: 800;
+}
+
+.month-track-item:hover,
+.month-track-item.active {
+  color: var(--ink);
+  border-color: rgba(212, 167, 79, 0.5);
+  background: rgba(212, 167, 79, 0.12);
+}
+
+.month-track-item.current {
+  box-shadow: inset 0 0 0 1px rgba(77, 169, 167, 0.55);
 }
 
 .calendar-day {
