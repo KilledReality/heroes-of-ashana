@@ -4513,16 +4513,36 @@ function showRollPopup(log) {
   const old = document.querySelector(".roll-popup");
   if (old) old.remove();
   const popup = el("div", "roll-popup");
+  const diceStage = el("div", "roll-animation-stage");
+  const dice = el("div", "roll-die rolling", "?");
+  const finalFace = log.rolls.length === 1 ? log.rolls[0] : log.total;
+  const sides = Number(log.formula.match(/d(\d+)/i)?.[1] || Math.max(...log.rolls, 20));
+  diceStage.append(dice);
   popup.append(
     el("p", "eyebrow", log.actor),
     el("h3", "", log.label || "Бросок"),
+    diceStage,
     el("strong", "roll-popup-total", log.total),
     el("p", "muted", `${log.formula} → [${log.rolls.join(", ")}]`)
   );
   const close = button("Закрыть", "small-button", () => popup.remove());
   popup.append(close);
   document.body.append(popup);
+  animateRollDie(dice, finalFace, sides);
   setTimeout(() => popup.remove(), 5200);
+}
+
+function animateRollDie(dice, finalFace, sides) {
+  const startedAt = Date.now();
+  const duration = 900;
+  const tick = setInterval(() => {
+    dice.textContent = 1 + Math.floor(Math.random() * Math.max(2, sides));
+    if (Date.now() - startedAt < duration) return;
+    clearInterval(tick);
+    dice.textContent = finalFace;
+    dice.classList.remove("rolling");
+    dice.classList.add("landed");
+  }, 60);
 }
 
 function parseRoll(input) {
