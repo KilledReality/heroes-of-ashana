@@ -242,6 +242,28 @@ const seedData = {
     monthNames: defaultAshanaMonths,
     version: 2,
   },
+  tagMeta: {
+    "бог": {
+      description: "Бог в Асхане - могущественная сущность, связанная с верой, доменами, клятвами, культами и силами, которые смертные редко понимают до конца.",
+      image: "",
+      public: true,
+    },
+    "место": {
+      description: "Географическая или сюжетная точка мира: регион, город, дорога, руины, святилище или иная важная локация.",
+      image: "",
+      public: true,
+    },
+    "npc": {
+      description: "Неигровой персонаж: союзник, враг, заказчик, свидетель, правитель, торговец или иной участник истории.",
+      image: "",
+      public: true,
+    },
+    "фракция": {
+      description: "Организация, культ, государство, дом, гильдия или группа влияния со своими целями и ресурсами.",
+      image: "",
+      public: true,
+    },
+  },
   wiki: [
     {
       id: "solaris",
@@ -689,6 +711,8 @@ let mapScroll = { left: 0, top: 0 };
 let mapBrushTerrain = "лес";
 let mapBrushEnabled = false;
 let searchTerm = "";
+let tagTooltipTimer = null;
+let activeTagTooltip = null;
 
 const viewRoot = document.querySelector("#viewRoot");
 const navItems = document.querySelectorAll(".nav-item");
@@ -741,6 +765,7 @@ function normalizeState(raw) {
   normalized.calendarEvents = (raw.calendarEvents ?? seedData.calendarEvents).map(normalizeCalendarEvent);
   normalized.sessionLogs = (raw.sessionLogs ?? seedData.sessionLogs).map(normalizeSessionLog);
   normalized.gallery = (raw.gallery ?? seedData.gallery).map(normalizeGalleryItem);
+  normalized.tagMeta = normalizeTagMeta(raw.tagMeta ?? seedData.tagMeta, normalized);
   normalized.map = {
     ...seedData.map,
     ...(raw.map ?? {}),
@@ -885,6 +910,74 @@ function normalizeGalleryItem(item) {
     tags: Array.isArray(item.tags) ? item.tags : csv(item.tags ?? item.type ?? ""),
     palette: Array.isArray(item.palette) ? item.palette : ["#d4a74f", "#4da9a7", "#111719"],
   };
+}
+
+function normalizeTagMeta(meta, sourceState = state) {
+  const normalized = {};
+  const source = meta && typeof meta === "object" ? meta : {};
+  Object.entries(source).forEach(([tagName, value]) => {
+    const clean = normalizeTagName(tagName);
+    if (!clean) return;
+    normalized[clean] = normalizeTagMetaEntry(clean, value);
+  });
+  collectCampaignTags(sourceState).forEach((tagName) => {
+    const clean = normalizeTagName(tagName);
+    if (!clean || normalized[clean]) return;
+    normalized[clean] = normalizeTagMetaEntry(clean, {});
+  });
+  return Object.fromEntries(Object.entries(normalized).sort(([a], [b]) => a.localeCompare(b, "ru")));
+}
+
+function normalizeTagMetaEntry(tagName, value = {}) {
+  const entry = value && typeof value === "object" ? value : {};
+  return {
+    description: entry.description || defaultTagDescription(tagName),
+    image: entry.image || "",
+    public: entry.public ?? true,
+  };
+}
+
+function normalizeTagName(tagName) {
+  return String(tagName || "").trim().toLowerCase();
+}
+
+function collectCampaignTags(sourceState = state) {
+  const result = new Set();
+  const add = (items) => (items ?? []).forEach((tagName) => {
+    const clean = normalizeTagName(tagName);
+    if (clean) result.add(clean);
+  });
+  (sourceState.wiki ?? []).forEach((item) => add(item.tags));
+  (sourceState.gallery ?? []).forEach((item) => add(item.tags));
+  (sourceState.npcs ?? []).forEach((item) => add(item.tags));
+  (sourceState.factions ?? []).forEach((item) => add(item.tags));
+  (sourceState.settlements ?? []).forEach((item) => add(item.tags));
+  return [...result].sort((a, b) => a.localeCompare(b, "ru"));
+}
+
+function defaultTagDescription(tagName) {
+  const value = normalizeTagName(tagName);
+  const descriptions = {
+    "бог": "Бог в Асхане - могущественная сущность, связанная с верой, доменами, клятвами, культами и силами, которые смертные редко понимают до конца.",
+    "боги": "Раздел и теги, связанные с пантеонами, культами, божественными силами и их влиянием на смертных.",
+    "место": "Географическая или сюжетная точка мира: регион, город, дорога, руины, святилище или иная важная локация.",
+    "места": "Локации Асханы, которые важны для путешествий, заданий, политики или личных историй персонажей.",
+    "npc": "Неигровой персонаж: союзник, враг, заказчик, свидетель, правитель, торговец или иной участник истории.",
+    "фракция": "Организация, культ, государство, дом, гильдия или группа влияния со своими целями и ресурсами.",
+    "поселение": "Населенный пункт, владение или база партии с постройками, доходами, проблемами и управлением.",
+    "культ": "Закрытая религиозная или мистическая группа, часто связанная с тайными целями, обрядами и угрозами.",
+    "секрет": "Информация, скрытая от игроков или известная не всем персонажам внутри мира.",
+    "угроза": "Источник опасности: враг, бедствие, политический кризис, чудовище или надвигающееся событие.",
+    "дорога": "Путь между локациями, важный для торговли, путешествий, засад, слухов и случайных встреч.",
+    "город": "Крупное поселение с властью, фракциями, торговлей, законами и собственными конфликтами.",
+    "деревня": "Малое поселение, обычно тесно связанное с местной экономикой, землей, соседями и слухами.",
+    "торговля": "Деньги, рынки, пошлины, караваны, товары, долги и экономическое влияние.",
+    "караван": "Группа путников или торговцев, перевозящая людей, товары, слухи и неприятности между землями.",
+    "свет": "Темы света, очищения, откровения, защиты и сил, противостоящих тьме.",
+    "клятвы": "Обеты, договоры, священные обещания и последствия их нарушения.",
+    "храмы": "Священные места, духовные общины, реликвии и жрецы.",
+  };
+  return descriptions[value] || `Краткая справка по тегу "${tagName}". Мастер может заменить этот текст на точное описание термина Асханы.`;
 }
 
 function normalizeNpc(item) {
@@ -1275,6 +1368,9 @@ function compactStateForStorage(source) {
     if (isEmbeddedImage(item.portrait)) item.portrait = "";
   });
   compact.factions?.forEach((item) => {
+    if (isEmbeddedImage(item.image)) item.image = "";
+  });
+  Object.values(compact.tagMeta ?? {}).forEach((item) => {
     if (isEmbeddedImage(item.image)) item.image = "";
   });
   compact.characters?.forEach((character) => {
@@ -1883,6 +1979,7 @@ function renderWiki() {
         activeWikiCategoryId = "";
       });
     });
+    attachTagTooltip(tagButton, tagName);
     tagPanel.append(tagButton);
   });
   list.append(tagPanel);
@@ -2253,6 +2350,82 @@ function compactBadges(items) {
   const row = el("div", "compact-badges");
   items.filter(Boolean).forEach((item) => row.append(el("span", "compact-badge", item)));
   return row;
+}
+
+function tagChip(tagName, className = "tag") {
+  const clean = normalizeTagName(tagName);
+  const chip = el("span", className, tagName);
+  chip.dataset.tagName = clean;
+  attachTagTooltip(chip, clean);
+  return chip;
+}
+
+function attachTagTooltip(target, tagName) {
+  target.addEventListener("mouseenter", (event) => scheduleTagTooltip(tagName, event.currentTarget));
+  target.addEventListener("mouseleave", hideTagTooltip);
+  target.addEventListener("focus", (event) => scheduleTagTooltip(tagName, event.currentTarget));
+  target.addEventListener("blur", hideTagTooltip);
+}
+
+function scheduleTagTooltip(tagName, anchor) {
+  hideTagTooltip();
+  tagTooltipTimer = setTimeout(() => showTagTooltip(tagName, anchor), 1500);
+}
+
+function showTagTooltip(tagName, anchor) {
+  const meta = tagMetaByName(tagName);
+  if (!meta || (!meta.public && !isAdmin)) return;
+  const tooltip = el("div", "tag-tooltip");
+  if (meta.image) {
+    const img = document.createElement("img");
+    img.src = meta.image;
+    img.alt = tagName;
+    tooltip.append(img);
+  }
+  tooltip.append(
+    el("p", "eyebrow", "Тег"),
+    el("h4", "", tagName),
+    el("p", "", meta.description || defaultTagDescription(tagName))
+  );
+  document.body.append(tooltip);
+  const rect = anchor.getBoundingClientRect();
+  const top = Math.min(window.innerHeight - tooltip.offsetHeight - 12, rect.bottom + 10);
+  const left = Math.min(window.innerWidth - tooltip.offsetWidth - 12, Math.max(12, rect.left));
+  tooltip.style.top = `${Math.max(12, top)}px`;
+  tooltip.style.left = `${left}px`;
+  activeTagTooltip = tooltip;
+}
+
+function hideTagTooltip() {
+  clearTimeout(tagTooltipTimer);
+  tagTooltipTimer = null;
+  activeTagTooltip?.remove();
+  activeTagTooltip = null;
+}
+
+function tagMetaByName(tagName) {
+  const clean = normalizeTagName(tagName);
+  return state.tagMeta?.[clean] ?? normalizeTagMetaEntry(clean, {});
+}
+
+function registerTags(tagNames, promptForDetails = false) {
+  if (!state.tagMeta) state.tagMeta = {};
+  const created = [];
+  tagNames.forEach((tagName) => {
+    const clean = normalizeTagName(tagName);
+    if (!clean || state.tagMeta[clean]) return;
+    state.tagMeta[clean] = normalizeTagMetaEntry(clean, {});
+    created.push(clean);
+  });
+  if (promptForDetails && isAdmin) {
+    created.forEach((tagName) => {
+      if (!confirm(`Новый тег "${tagName}" добавлен в справочник. Заполнить краткое описание сейчас?`)) return;
+      const description = prompt(`Описание тега "${tagName}"`, state.tagMeta[tagName].description);
+      if (description !== null) state.tagMeta[tagName].description = description.trim() || state.tagMeta[tagName].description;
+    });
+  }
+  state.tagMeta = normalizeTagMeta(state.tagMeta);
+  return created;
 }
 
 function linkedWikiArticles(hex) {
@@ -2932,10 +3105,12 @@ function renderGallery() {
   });
   tagBar.append(allButton);
   allGalleryTags().forEach((tagName) => {
-    tagBar.append(button(tagName, `tag tag-button ${activeGalleryTag === tagName ? "active" : ""}`, () => {
+    const tagButton = button(tagName, `tag tag-button ${activeGalleryTag === tagName ? "active" : ""}`, () => {
       activeGalleryTag = activeGalleryTag === tagName ? "" : tagName;
       render();
-    }));
+    });
+    attachTagTooltip(tagButton, tagName);
+    tagBar.append(tagButton);
   });
   root.append(tagBar);
   const grid = el("div", "gallery-grid");
@@ -3193,6 +3368,8 @@ function npcEditor(npc) {
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    const nextTags = csv(fields.tags.value);
+    registerTags(nextTags, true);
     Object.assign(npc, normalizeNpc({
       ...npc,
       name: fields.name.value,
@@ -3205,7 +3382,7 @@ function npcEditor(npc) {
       status: fields.status.value,
       lastSeen: fields.lastSeen.value,
       public: fields.public.checked,
-      tags: csv(fields.tags.value),
+      tags: nextTags,
       description: fields.description.value,
       gmNotes: fields.gmNotes.value,
       wikiLinks: checkedValues(fields.wikiLinks),
@@ -3276,6 +3453,8 @@ function factionEditor(faction) {
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    const nextTags = csv(fields.tags.value);
+    registerTags(nextTags, true);
     Object.assign(faction, normalizeFaction({
       ...faction,
       name: fields.name.value,
@@ -3285,7 +3464,7 @@ function factionEditor(faction) {
       relation: Number(fields.relation.value || 0),
       influence: fields.influence.value,
       public: fields.public.checked,
-      tags: csv(fields.tags.value),
+      tags: nextTags,
       description: fields.description.value,
       goals: fields.goals.value,
       resources: fields.resources.value,
@@ -3644,6 +3823,7 @@ function settlementEditor(settlement) {
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    const nextTags = csv(fields.tags.value);
     let parsed;
     try {
       parsed = {
@@ -3656,6 +3836,7 @@ function settlementEditor(settlement) {
       alert("JSON поселения не сохранен: проверь скобки, кавычки и запятые в постройках/проблемах/модификаторах/журнале.");
       return;
     }
+    registerTags(nextTags, true);
     Object.assign(settlement, normalizeSettlement({
       ...settlement,
       name: fields.name.value,
@@ -3671,7 +3852,7 @@ function settlementEditor(settlement) {
       stability: Number(fields.stability.value || 0),
       threat: Number(fields.threat.value || 0),
       public: fields.public.checked,
-      tags: csv(fields.tags.value),
+      tags: nextTags,
       description: fields.description.value,
       gmNotes: fields.gmNotes.value,
       wikiLinks: checkedValues(fields.wikiLinks),
@@ -4385,6 +4566,7 @@ function renderAdmin() {
   meta.append(el("h3", "", "Кампания"), campaignEditor());
   const create = el("section", "admin-panel");
   create.append(el("h3", "", "Новая wiki-запись"), wikiCreator());
+  const tagsPanel = tagLibraryPanel();
   const dataPanel = el("section", "admin-panel admin-stack");
   const importInput = document.createElement("input");
   importInput.type = "file";
@@ -4427,9 +4609,94 @@ function renderAdmin() {
     ]),
     labelWrap("Импорт JSON", importInput)
   );
-  stack.append(meta, create, dataPanel);
+  stack.append(meta, create, tagsPanel, dataPanel);
   root.append(stack);
   return root;
+}
+
+function tagLibraryPanel() {
+  registerTags(collectCampaignTags());
+  const panel = el("section", "admin-panel admin-stack");
+  const createForm = el("form", "search-form");
+  const newTag = input("");
+  newTag.placeholder = "Новый тег";
+  createForm.append(newTag, button("Добавить тег", "small-button", null, "submit"));
+  createForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const clean = normalizeTagName(newTag.value);
+    if (!clean) return;
+    registerTags([clean], true);
+    newTag.value = "";
+    saveState();
+    render();
+  });
+
+  const grid = el("div", "tag-library-grid");
+  Object.keys(state.tagMeta ?? {}).forEach((tagName) => {
+    grid.append(tagMetaEditor(tagName));
+  });
+
+  panel.append(
+    el("h3", "", "Справочник тегов"),
+    el("p", "muted", "Эти описания показываются игрокам при наведении на тег. Картинку и текст можно менять в любой момент."),
+    createForm,
+    grid.children.length ? grid : el("div", "empty-state compact-empty", "Тегов пока нет.")
+  );
+  return panel;
+}
+
+function tagMetaEditor(tagName) {
+  const meta = tagMetaByName(tagName);
+  const card = el("article", "tag-library-card");
+  const preview = el("div", "tag-library-preview");
+  if (meta.image) {
+    const img = document.createElement("img");
+    img.src = meta.image;
+    img.alt = tagName;
+    preview.append(img);
+  } else {
+    preview.append(el("span", "", "#"));
+  }
+  const form = el("form", "form-grid compact-form");
+  const description = textarea(meta.description);
+  const publicInput = document.createElement("input");
+  const imageInput = document.createElement("input");
+  publicInput.type = "checkbox";
+  publicInput.checked = meta.public;
+  imageInput.type = "file";
+  imageInput.accept = "image/png,image/jpeg,image/webp,image/gif";
+  imageInput.addEventListener("change", async () => {
+    const file = imageInput.files?.[0];
+    if (!file) return;
+    state.tagMeta[tagName].image = await imageFileToUrl(file, "tags");
+    saveState();
+    render();
+  });
+  form.append(
+    labelWrap("Описание", description, "span-2"),
+    checkboxWrap("Видно игрокам", publicInput),
+    labelWrap("Картинка", imageInput),
+    actionRow([
+      button("Сохранить тег", "primary-button", null, "submit"),
+      button("Убрать картинку", "ghost-button", () => {
+        state.tagMeta[tagName].image = "";
+        saveState();
+        render();
+      }),
+    ], "span-2")
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.tagMeta[tagName] = normalizeTagMetaEntry(tagName, {
+      ...state.tagMeta[tagName],
+      description: description.value,
+      public: publicInput.checked,
+    });
+    saveState();
+    render();
+  });
+  card.append(preview, el("h4", "", tagName), tagChip(tagName), form);
+  return card;
 }
 
 function exportCampaign() {
@@ -4476,12 +4743,14 @@ function campaignEditor() {
 function wikiCreator() {
   const article = { title: "", category: "Места", categoryId: "places", tags: "", body: "", gmBody: "", image: "", imageStyle: defaultImageStyle(), public: true };
   return wikiForm(article, (values) => {
+    const nextTags = csv(values.tags);
+    registerTags(nextTags, true);
     const article = normalizeWikiArticle({
       id: slug(values.title),
       title: values.title,
       category: values.category,
       categoryId: values.categoryId,
-      tags: csv(values.tags),
+      tags: nextTags,
       body: values.body,
       gmBody: values.gmBody,
       image: values.image,
@@ -4507,11 +4776,13 @@ function wikiEditor(article) {
   box.append(el("h3", "", "Редактирование"), wikiForm(
     formArticle,
     (values) => {
+      const nextTags = csv(values.tags);
+      registerTags(nextTags, true);
       Object.assign(article, {
         title: values.title,
         category: values.category,
         categoryId: values.categoryId,
-        tags: csv(values.tags),
+        tags: nextTags,
         body: values.body,
         gmBody: values.gmBody,
         image: values.image,
@@ -5328,10 +5599,12 @@ function galleryEditor(item) {
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    const nextTags = csv(tagsInput.value);
+    registerTags(nextTags, true);
     item.title = title.value;
     item.type = type.value;
     item.linked = linked.value;
-    item.tags = csv(tagsInput.value);
+    item.tags = nextTags;
     item.image = imageValue;
     item.imageStyle = {
       aspect: aspect.value,
@@ -5392,7 +5665,7 @@ function metricGrid(items) {
 
 function tags(items) {
   const wrap = el("div", "tag-row");
-  items.filter(Boolean).forEach((item) => wrap.append(el("span", "tag", item)));
+  items.filter(Boolean).forEach((item) => wrap.append(tagChip(item)));
   return wrap;
 }
 
