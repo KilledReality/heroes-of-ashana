@@ -459,12 +459,20 @@ textarea:focus {
   pointer-events: none;
 }
 
-.tag-tooltip img {
+.tag-tooltip-image {
   width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
+  overflow: hidden;
   border-radius: 6px;
   border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.tag-tooltip-image img,
+.tag-library-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transform-origin: center;
 }
 
 .tag-tooltip h4 {
@@ -511,13 +519,6 @@ textarea:focus {
   color: var(--accent);
   font-size: 2rem;
   font-weight: 800;
-}
-
-.tag-library-preview img {
-  width: 100%;
-  height: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
 }
 
 .wiki-layout,

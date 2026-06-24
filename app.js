@@ -933,6 +933,7 @@ function normalizeTagMetaEntry(tagName, value = {}) {
   return {
     description: entry.description || defaultTagDescription(tagName),
     image: entry.image || "",
+    imageStyle: { ...defaultImageStyle(), ...(entry.imageStyle ?? {}) },
     public: entry.public ?? true,
   };
 }
@@ -2377,10 +2378,16 @@ function showTagTooltip(tagName, anchor) {
   if (!meta || (!meta.public && !isAdmin)) return;
   const tooltip = el("div", "tag-tooltip");
   if (meta.image) {
+    const style = { ...defaultImageStyle(), ...(meta.imageStyle ?? {}) };
+    const frame = el("div", `tag-tooltip-image image-aspect-${style.aspect}`);
     const img = document.createElement("img");
     img.src = meta.image;
     img.alt = tagName;
-    tooltip.append(img);
+    img.style.objectFit = style.fit;
+    img.style.objectPosition = `${style.x}% ${style.y}%`;
+    img.style.transform = `scale(${style.zoom})`;
+    frame.append(img);
+    tooltip.append(frame);
   }
   tooltip.append(
     el("p", "eyebrow", "Тег"),
@@ -4649,18 +4656,42 @@ function tagMetaEditor(tagName) {
   const meta = tagMetaByName(tagName);
   const card = el("article", "tag-library-card");
   const preview = el("div", "tag-library-preview");
-  if (meta.image) {
-    const img = document.createElement("img");
-    img.src = meta.image;
-    img.alt = tagName;
-    preview.append(img);
-  } else {
-    preview.append(el("span", "", "#"));
-  }
   const form = el("form", "form-grid compact-form");
   const description = textarea(meta.description);
   const publicInput = document.createElement("input");
   const imageInput = document.createElement("input");
+  let imageValue = meta.image;
+  const imageStyle = { ...defaultImageStyle(), ...(meta.imageStyle ?? {}) };
+  const aspect = selectInput([
+    ["wide", "Широкий 16:9"],
+    ["square", "Квадрат 1:1"],
+    ["portrait", "Портрет 3:4"],
+    ["banner", "Баннер 21:9"],
+  ], imageStyle.aspect);
+  const fit = selectInput([
+    ["cover", "Обрезать по рамке"],
+    ["contain", "Вписать целиком"],
+  ], imageStyle.fit);
+  const posX = rangeInput(imageStyle.x, 0, 100, 1);
+  const posY = rangeInput(imageStyle.y, 0, 100, 1);
+  const zoom = rangeInput(imageStyle.zoom, 1, 2.5, 0.05);
+  const refreshPreview = () => {
+    preview.innerHTML = "";
+    preview.className = `tag-library-preview image-aspect-${aspect.value}`;
+    if (!imageValue) {
+      preview.append(el("span", "", "#"));
+      return;
+    }
+    const img = document.createElement("img");
+    img.src = imageValue;
+    img.alt = tagName;
+    img.style.objectFit = fit.value;
+    img.style.objectPosition = `${posX.value}% ${posY.value}%`;
+    img.style.transform = `scale(${zoom.value})`;
+    preview.append(img);
+  };
+  [aspect, fit, posX, posY, zoom].forEach((control) => control.addEventListener("input", refreshPreview));
+  refreshPreview();
   publicInput.type = "checkbox";
   publicInput.checked = meta.public;
   imageInput.type = "file";
@@ -4668,20 +4699,23 @@ function tagMetaEditor(tagName) {
   imageInput.addEventListener("change", async () => {
     const file = imageInput.files?.[0];
     if (!file) return;
-    state.tagMeta[tagName].image = await imageFileToUrl(file, "tags");
-    saveState();
-    render();
+    imageValue = await imageFileToUrl(file, "tags");
+    refreshPreview();
   });
   form.append(
     labelWrap("Описание", description, "span-2"),
     checkboxWrap("Видно игрокам", publicInput),
-    labelWrap("Картинка", imageInput),
+    labelWrap("Картинка", imageInput, "span-2"),
+    labelWrap("Формат картинки", aspect),
+    labelWrap("Отображение", fit),
+    labelWrap("Позиция X", posX),
+    labelWrap("Позиция Y", posY),
+    labelWrap("Масштаб обрезки", zoom, "span-2"),
     actionRow([
       button("Сохранить тег", "primary-button", null, "submit"),
       button("Убрать картинку", "ghost-button", () => {
-        state.tagMeta[tagName].image = "";
-        saveState();
-        render();
+        imageValue = "";
+        refreshPreview();
       }),
     ], "span-2")
   );
@@ -4690,6 +4724,14 @@ function tagMetaEditor(tagName) {
     state.tagMeta[tagName] = normalizeTagMetaEntry(tagName, {
       ...state.tagMeta[tagName],
       description: description.value,
+      image: imageValue,
+      imageStyle: {
+        aspect: aspect.value,
+        fit: fit.value,
+        x: Number(posX.value),
+        y: Number(posY.value),
+        zoom: Number(zoom.value),
+      },
       public: publicInput.checked,
     });
     saveState();
