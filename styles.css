@@ -950,6 +950,28 @@ label {
   font-size: 0.78rem;
 }
 
+.map-link-list {
+  display: grid;
+  gap: 7px;
+}
+
+.map-link-button {
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid rgba(212, 167, 79, 0.25);
+  border-radius: 8px;
+  color: var(--paper-strong);
+  background: rgba(212, 167, 79, 0.08);
+  text-align: left;
+  line-height: 1.25;
+}
+
+.map-link-button:hover {
+  border-color: rgba(212, 167, 79, 0.55);
+  background: rgba(212, 167, 79, 0.14);
+}
+
 .inspector-section {
   padding: 12px;
   display: grid;
@@ -1000,6 +1022,30 @@ label {
 
 .inspector-form textarea {
   min-height: 76px;
+}
+
+.checkbox-list {
+  max-height: 170px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.checkbox-list label {
+  min-width: 0;
+  padding: 5px 6px;
+  border-radius: 6px;
+  color: var(--paper-strong);
+  background: rgba(255, 255, 255, 0.035);
+  line-height: 1.25;
+}
+
+.checkbox-list input {
+  flex: 0 0 auto;
 }
 
 .hex-map-stage {

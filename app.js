@@ -487,10 +487,16 @@ function normalizeMapRegions(regions) {
           notes: "",
           gmNotes: "",
           objects: [],
+          wikiLinks: [],
+          questLinks: [],
+          mapLinks: [],
           tileImage: "",
           tileFit: "cover",
           ...value,
           objects: Array.isArray(value.objects) ? value.objects : csv(value.objects ?? ""),
+          wikiLinks: Array.isArray(value.wikiLinks) ? value.wikiLinks : csv(value.wikiLinks ?? ""),
+          questLinks: Array.isArray(value.questLinks) ? value.questLinks : csv(value.questLinks ?? ""),
+          mapLinks: Array.isArray(value.mapLinks) ? value.mapLinks : csv(value.mapLinks ?? ""),
         },
       ])
     ),
@@ -1420,6 +1426,7 @@ function mapInspector(region, selected) {
   body.append(
     inspectorSection("Заметки", el("p", "", selected.notes || "Публичных заметок пока нет.")),
     inspectorSection("Объекты", selected.objects?.length ? compactBadges(selected.objects) : el("p", "muted", "Объектов пока нет")),
+    inspectorSection("Связи", mapHexLinksPanel(region, selected)),
     inspectorSection("Вид карты", el("p", "muted", `Масштаб ${Math.round(mapZoom * 100)}%`))
   );
   if (isAdmin && selected.gmNotes) body.append(inspectorSection("GM", el("p", "", selected.gmNotes), "danger"));
@@ -1442,6 +1449,54 @@ function compactBadges(items) {
   const row = el("div", "compact-badges");
   items.filter(Boolean).forEach((item) => row.append(el("span", "compact-badge", item)));
   return row;
+}
+
+function linkedWikiArticles(hex) {
+  const visibleIds = new Set(visibleWiki().map((article) => article.id));
+  return (hex.wikiLinks ?? []).map((id) => wikiById(id)).filter((article) => article && visibleIds.has(article.id));
+}
+
+function linkedQuests(hex) {
+  const visibleIds = new Set(visibleQuests().map((quest) => quest.id));
+  return (hex.questLinks ?? []).map((id) => state.quests.find((quest) => quest.id === id)).filter((quest) => quest && visibleIds.has(quest.id));
+}
+
+function linkedMapRegions(hex) {
+  const visibleIds = new Set(visibleMapRegions().map((region) => region.id));
+  return (hex.mapLinks ?? []).map((id) => state.map.regions.find((region) => region.id === id)).filter((region) => region && visibleIds.has(region.id));
+}
+
+function mapHexLinksPanel(region, hex) {
+  const links = el("div", "map-link-list");
+  linkedWikiArticles(hex).forEach((article) => {
+    links.append(button(`Wiki: ${article.title}`, "map-link-button", () => openWikiArticle(article.id)));
+  });
+  linkedQuests(hex).forEach((quest) => {
+    links.append(button(`Задание: ${quest.title}`, "map-link-button", () => openQuest(quest.id)));
+  });
+  linkedMapRegions(hex)
+    .filter((linkedRegion) => linkedRegion.id !== region.id)
+    .forEach((linkedRegion) => {
+      links.append(button(`Карта: ${linkedRegion.title}`, "map-link-button", () => selectMapRegion(linkedRegion.id)));
+    });
+  return links.children.length ? links : el("p", "muted", "Связей пока нет");
+}
+
+function openWikiArticle(articleId) {
+  activeWikiId = articleId;
+  activeWikiCategoryId = "";
+  activeWikiTag = "";
+  wikiCategorySearchTerm = "";
+  searchTerm = "";
+  if (globalSearch) globalSearch.value = "";
+  setView("wiki");
+}
+
+function openQuest(questId) {
+  const quest = state.quests.find((item) => item.id === questId);
+  searchTerm = quest?.title ?? "";
+  if (globalSearch) globalSearch.value = searchTerm;
+  setView("quests");
 }
 
 function restoreMapScroll(stage) {
@@ -1480,7 +1535,19 @@ function activeMapRegion() {
 
 function getHex(region, key) {
   if (!region.hexes[key]) {
-    region.hexes[key] = { title: "", terrain: "пусто", visible: true, notes: "", gmNotes: "", objects: [], tileImage: "", tileFit: "cover" };
+    region.hexes[key] = {
+      title: "",
+      terrain: "пусто",
+      visible: true,
+      notes: "",
+      gmNotes: "",
+      objects: [],
+      wikiLinks: [],
+      questLinks: [],
+      mapLinks: [],
+      tileImage: "",
+      tileFit: "cover",
+    };
   }
   return region.hexes[key];
 }
@@ -1497,9 +1564,11 @@ function hexGrid(region) {
       const key = hexKey(q, r);
       const data = region.hexes[key];
       const objectCount = data?.objects?.length ?? 0;
+      const linkCount = (data?.wikiLinks?.length ?? 0) + (data?.questLinks?.length ?? 0) + (data?.mapLinks?.length ?? 0);
       const hasContent = Boolean(
         data &&
           (objectCount ||
+            linkCount ||
             data.title ||
             data.notes ||
             data.gmNotes ||
@@ -1532,7 +1601,7 @@ function hexGrid(region) {
         if (terrainImage && !data?.tileImage) img.className = "terrain-tile-art";
         hex.append(img);
       }
-      if (objectCount) hex.append(el("span", "hex-label", String(objectCount)));
+      if (objectCount || linkCount) hex.append(el("span", "hex-label", String(objectCount + linkCount)));
       grid.append(hex);
     }
   }
@@ -1576,6 +1645,18 @@ function hexEditor(region, key, data) {
   const notes = textarea(data.notes);
   const gmNotes = textarea(data.gmNotes);
   const objects = textarea((data.objects ?? []).join("\n"));
+  const wikiLinks = checkboxList(
+    visibleWiki().map((article) => [article.id, article.title]),
+    data.wikiLinks ?? []
+  );
+  const questLinks = checkboxList(
+    visibleQuests().map((quest) => [quest.id, quest.title]),
+    data.questLinks ?? []
+  );
+  const mapLinks = checkboxList(
+    state.map.regions.filter((item) => item.id !== region.id).map((item) => [item.id, item.title]),
+    data.mapLinks ?? []
+  );
   let tileImage = data.tileImage || "";
   const tileFit = selectInput([
     ["cover", "Обрезать по гексу"],
@@ -1606,6 +1687,9 @@ function hexEditor(region, key, data) {
     labelWrap("Картинка гекса", fragment([tileInput, tilePreview])),
     labelWrap("Подгонка картинки", tileFit),
     labelWrap("Объекты, по одному на строку", objects),
+    labelWrap("Связанные Wiki-статьи", wikiLinks),
+    labelWrap("Связанные задания", questLinks),
+    labelWrap("Переходы на карты", mapLinks),
     labelWrap("Заметки игрокам", notes),
     labelWrap("GM-заметки", gmNotes),
     actionRow([
@@ -1631,6 +1715,9 @@ function hexEditor(region, key, data) {
       notes: notes.value,
       gmNotes: gmNotes.value,
       objects: objects.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+      wikiLinks: checkedValues(wikiLinks),
+      questLinks: checkedValues(questLinks),
+      mapLinks: checkedValues(mapLinks),
       tileImage,
       tileFit: tileFit.value,
     };
@@ -3347,6 +3434,27 @@ function checkboxWrap(text, control) {
   control.style.width = "auto";
   label.append(control, document.createTextNode(text));
   return label;
+}
+
+function checkboxList(options, selected = []) {
+  const selectedSet = new Set(selected);
+  const list = el("div", "checkbox-list");
+  if (!options.length) {
+    list.append(el("p", "muted", "Нет доступных вариантов"));
+    return list;
+  }
+  options.forEach(([value, text]) => {
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = value;
+    box.checked = selectedSet.has(value);
+    list.append(checkboxWrap(text, box));
+  });
+  return list;
+}
+
+function checkedValues(container) {
+  return [...container.querySelectorAll("input[type='checkbox']:checked")].map((item) => item.value);
 }
 
 function input(value) {
