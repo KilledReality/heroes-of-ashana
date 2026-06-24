@@ -339,6 +339,50 @@ textarea:focus {
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
 }
 
+.global-search-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.global-search-panel h3 {
+  margin: 0;
+}
+
+.global-search-list {
+  display: grid;
+  gap: 10px;
+}
+
+.global-search-card {
+  width: 100%;
+  min-height: 0;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.global-search-card:hover {
+  border-color: rgba(212, 167, 79, 0.52);
+  background: rgba(212, 167, 79, 0.1);
+}
+
+.global-search-card strong {
+  color: var(--paper-strong);
+  font-size: 1.05rem;
+}
+
+.global-search-card span,
+.global-search-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .card {
   min-height: 150px;
   padding: 16px;

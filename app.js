@@ -1538,6 +1538,8 @@ function header(title, subtitle, action) {
 }
 
 function renderDashboard() {
+  if (searchTerm.trim()) return renderGlobalSearch();
+
   const root = el("div");
   root.append(
     header(
@@ -1611,6 +1613,231 @@ function renderDashboard() {
 
   root.append(grid, spacer(), cards);
   return root;
+}
+
+function renderGlobalSearch() {
+  const query = searchTerm.trim();
+  const root = el("div");
+  const clear = button("Очистить поиск", "ghost-button", () => {
+    clearSearchTerm();
+    render();
+  });
+  root.append(header("Поиск", `Результаты по запросу "${query}" во всех открытых разделах Асханы.`, clear));
+
+  const results = globalSearchResults(query);
+  const panel = el("section", "panel global-search-panel");
+  panel.append(
+    el("p", "eyebrow", "Найдено"),
+    el("h3", "", `${results.length} результатов`)
+  );
+  if (!results.length) {
+    panel.append(el("div", "empty-state", "Ничего не найдено. Попробуй другое слово или проверь, не скрыта ли запись от игроков."));
+    root.append(panel);
+    return root;
+  }
+
+  const list = el("div", "global-search-list");
+  results.forEach((result) => {
+    const card = button("", "global-search-card", () => result.open());
+    card.append(
+      compactBadges([result.section, result.visibility]),
+      el("strong", "", result.title),
+      el("span", "", result.subtitle),
+      el("p", "", result.excerpt)
+    );
+    list.append(card);
+  });
+  panel.append(list);
+  root.append(panel);
+  return root;
+}
+
+function globalSearchResults(query) {
+  const needle = normalizeSearchQuery(query);
+  if (!needle) return [];
+  const results = [];
+  const add = (section, title, subtitle, excerpt, haystack, open, visibility = "игрокам") => {
+    if (!matchesSearch(haystack, needle)) return;
+    results.push({ section, title, subtitle, excerpt: shortText(excerpt || subtitle || title, 230), open, visibility });
+  };
+
+  visibleWiki().forEach((article) => {
+    add(
+      "Wiki",
+      article.title,
+      article.category,
+      article.body,
+      [article.title, article.category, article.body, isAdmin ? article.gmBody : "", article.tags.join(" ")],
+      () => openWikiArticle(article.id),
+      article.public ? "игрокам" : "мастеру"
+    );
+  });
+
+  visibleQuests().forEach((quest) => {
+    add(
+      "Задания",
+      quest.title,
+      `${questStatus(quest.status)} · ${quest.patron || "без заказчика"}`,
+      quest.notes,
+      [quest.title, quest.status, quest.patron, quest.reward, quest.linked, quest.notes, isAdmin ? quest.gmNotes : ""],
+      () => openQuest(quest.id),
+      quest.status === "hidden" ? "мастеру" : "игрокам"
+    );
+  });
+
+  visibleNpcs().forEach((npc) => {
+    add(
+      "NPC",
+      npc.name,
+      [npc.role, npc.location].filter(Boolean).join(" · ") || "NPC",
+      npc.description,
+      [npc.name, npc.role, npc.location, npc.ancestry, npc.description, isAdmin ? npc.gmNotes : "", npc.tags.join(" ")],
+      () => openNpc(npc.id),
+      npc.public ? "игрокам" : "мастеру"
+    );
+  });
+
+  visibleFactions().forEach((faction) => {
+    add(
+      "Фракции",
+      faction.name,
+      [optionLabel(factionTypes, faction.type), faction.headquarters].filter(Boolean).join(" · ") || "Фракция",
+      faction.description,
+      [faction.name, faction.leader, faction.headquarters, faction.description, faction.goals, faction.resources, isAdmin ? faction.gmNotes : "", faction.tags.join(" ")],
+      () => openFaction(faction.id),
+      faction.public ? "игрокам" : "мастеру"
+    );
+  });
+
+  visibleSettlements().forEach((settlement) => {
+    const searchableProblems = settlement.problems.filter((problem) => isAdmin || (problem.public && problem.status !== "hidden"));
+    add(
+      "Поселения",
+      settlement.name,
+      [optionLabel(settlementTypes, settlement.type), settlement.ruler].filter(Boolean).join(" · ") || "Поселение",
+      settlement.description,
+      [settlement.name, settlement.ruler, settlement.size, settlement.description, isAdmin ? settlement.gmNotes : "", settlement.tags.join(" "), settlement.buildings.map((item) => item.name).join(" "), searchableProblems.map((item) => item.title).join(" ")],
+      () => {
+        clearSearchTerm();
+        openSettlement(settlement.id);
+      },
+      settlement.public ? "игрокам" : "мастеру"
+    );
+  });
+
+  visibleCalendarEvents().forEach((event) => {
+    add(
+      "Календарь",
+      event.title,
+      `${formatAshanaDate(event.date)} · ${optionLabel(calendarEventTypes, event.type)}`,
+      event.summary,
+      [event.title, optionLabel(calendarEventTypes, event.type), formatAshanaDate(event.date), event.summary, isAdmin ? event.gmNotes : ""],
+      () => {
+        clearSearchTerm();
+        activeCalendarDateKey = ashanaDateKey(event.date);
+        setView("calendar");
+      },
+      event.public ? "игрокам" : "мастеру"
+    );
+  });
+
+  visibleSessionLogs().forEach((session) => {
+    add(
+      "Журнал",
+      `#${session.sessionNumber} ${session.title}`,
+      formatAshanaDate(session.date),
+      session.summary,
+      [session.title, session.players, session.summary, session.decisions, session.loot, session.consequences, isAdmin ? session.gmNotes : ""],
+      () => {
+        clearSearchTerm();
+        activeSessionId = session.id;
+        setView("sessions");
+      },
+      session.public ? "игрокам" : "мастеру"
+    );
+  });
+
+  state.characters.forEach((character) => {
+    add(
+      "Персонажи",
+      character.name,
+      [character.player, character.className].filter(Boolean).join(" · ") || "Персонаж",
+      character.notes,
+      [character.name, character.player, character.className, character.ancestry, character.homeland, character.deity, character.languages, character.notes, isAdmin ? character.gmNotes : ""],
+      () => {
+        clearSearchTerm();
+        activeCharacterId = character.id;
+        setView("characters");
+      }
+    );
+  });
+
+  state.gallery.forEach((item) => {
+    add(
+      "Галерея",
+      item.title,
+      [item.type, item.linked].filter(Boolean).join(" · ") || "Изображение",
+      item.linked,
+      [item.title, item.type, item.linked, (item.tags ?? []).join(" ")],
+      () => {
+        clearSearchTerm();
+        setView("gallery");
+      }
+    );
+  });
+
+  visibleMapRegions().forEach((region) => {
+    add(
+      "Карты",
+      region.title,
+      region.type,
+      region.description,
+      [region.title, region.type, region.description],
+      () => {
+        clearSearchTerm();
+        if (!setView("map")) return;
+        selectMapRegion(region.id);
+      },
+      region.public ? "игрокам" : "мастеру"
+    );
+    Object.entries(region.hexes ?? {}).forEach(([key, hex]) => {
+      if (!hex.visible && !isAdmin) return;
+      add(
+        "Гексы",
+        hex.title || `Гекс ${key}`,
+        `${region.title} · ${key}`,
+        hex.notes || hex.objects?.join(", ") || hex.terrain,
+        [key, hex.title, hex.terrain, hex.notes, isAdmin ? hex.gmNotes : "", (hex.objects ?? []).join(" ")],
+        () => {
+          clearSearchTerm();
+          state.map.activeRegionId = region.id;
+          state.map.selectedHex = key;
+          setView("map");
+        },
+        hex.visible ? "игрокам" : "мастеру"
+      );
+    });
+  });
+
+  return results.sort((a, b) => a.section.localeCompare(b.section, "ru") || a.title.localeCompare(b.title, "ru"));
+}
+
+function normalizeSearchQuery(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function matchesSearch(values, needle) {
+  return normalizeSearchQuery(Array.isArray(values) ? values.filter(Boolean).join(" ") : values).includes(needle);
+}
+
+function shortText(value, limit = 180) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > limit ? `${text.slice(0, limit).trim()}...` : text;
+}
+
+function clearSearchTerm() {
+  searchTerm = "";
+  if (globalSearch) globalSearch.value = "";
 }
 
 function renderWiki() {
@@ -5313,6 +5540,10 @@ globalSearch.addEventListener("input", () => {
     return;
   }
   searchTerm = globalSearch.value;
+  if (searchTerm.trim()) {
+    currentView = "dashboard";
+    navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === currentView));
+  }
   render();
 });
 activeCharacterSelect.addEventListener("change", () => {
