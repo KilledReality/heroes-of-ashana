@@ -198,11 +198,47 @@ const problemStatuses = [
   ["hidden", "Скрыта"],
 ];
 
+const ashanaMonths = [
+  "Золотого Пепла",
+  "Серебряного Дождя",
+  "Медного Листа",
+  "Белого Ветра",
+  "Алого Солнца",
+  "Синей Воды",
+  "Черного Камня",
+  "Янтарного Поля",
+  "Лунной Тени",
+  "Последней Зари",
+];
+
+const ashanaWeekdays = [
+  "Первый день",
+  "Второй день",
+  "Третий день",
+  "Четвертый день",
+  "Пятый день",
+  "Шестой день",
+  "Седьмой день",
+  "Восьмой день",
+  "Девятый день",
+];
+
+const calendarEventTypes = [
+  ["session", "Сессия"],
+  ["quest", "Задание"],
+  ["travel", "Путешествие"],
+  ["settlement", "Поселение"],
+  ["danger", "Угроза"],
+  ["holiday", "Праздник"],
+  ["note", "Заметка"],
+];
+
 const seedData = {
   meta: {
     campaignName: "Герои Асханы",
     currentRegion: "Северные рубежи Короны Арвейна",
     currentDate: "17 день месяца Золотого Пепла",
+    ashanaDate: { year: 1, month: 1, day: 17 },
     version: 2,
   },
   wiki: [
@@ -409,6 +445,56 @@ const seedData = {
       ],
     },
   ],
+  calendarEvents: [
+    {
+      id: "arrival-grey-ford",
+      title: "Партия прибывает к Серому Броду",
+      type: "travel",
+      date: { year: 1, month: 1, day: 17 },
+      public: true,
+      summary: "Герои выходят к переправе на Сером Тракте и узнают первые подробности о пропавшем караване.",
+      gmNotes: "Хороший момент показать первые следы контрабанды и намек на культ Пепельной Луны.",
+      wikiLinks: ["grey-road"],
+      questLinks: ["missing-caravan"],
+      npcLinks: ["master-lior"],
+      settlementLinks: ["grey-ford"],
+      mapLinks: ["mezhi-canvas"],
+    },
+    {
+      id: "oath-seal-deadline",
+      title: "Печать храма темнеет сильнее",
+      type: "danger",
+      date: { year: 1, month: 1, day: 22 },
+      public: false,
+      summary: "Если никто не вмешается, алтарная печать Солариса перейдет в опасную фазу.",
+      gmNotes: "Можно поднять сложность проверки или добавить осложнение в храме.",
+      wikiLinks: ["solaris"],
+      questLinks: ["oath-temple"],
+      npcLinks: ["sister-eyrin"],
+      settlementLinks: [],
+      mapLinks: [],
+    },
+  ],
+  sessionLogs: [
+    {
+      id: "session-1-grey-road",
+      title: "След Серого Тракта",
+      sessionNumber: 1,
+      date: { year: 1, month: 1, day: 17 },
+      public: true,
+      players: "Ричи Голдманн и отряд",
+      summary: "Партия добралась до Серого Тракта, услышала о пропавшем караване мастера Лиора и вышла к поселению Серый Брод.",
+      decisions: "Герои решили начать с расспросов у переправы и проверить старые милевые столбы.",
+      loot: "Пока без добычи.",
+      consequences: "Серый Брод становится важной точкой расследования, а слухи о контрабанде начинают связываться с пропажей каравана.",
+      gmNotes: "Следующая сессия может открыть конфликт между старостами, стражей и контрабандистами.",
+      wikiLinks: ["grey-road"],
+      questLinks: ["missing-caravan"],
+      npcLinks: ["master-lior"],
+      settlementLinks: ["grey-ford"],
+      mapLinks: ["mezhi-canvas"],
+    },
+  ],
   characters: [
     {
       id: "richie-goldmann",
@@ -593,6 +679,8 @@ let wikiCategorySearchTerm = "";
 let wikiDraft = null;
 let activeDirectoryTab = "npcs";
 let activeSettlementId = state.settlements[0]?.id ?? null;
+let activeCalendarDateKey = ashanaDateKey(state.meta.ashanaDate);
+let activeSessionId = state.sessionLogs[0]?.id ?? null;
 let skillSearchTerm = "";
 let activeGalleryTag = "";
 let mapZoom = state.map.zoom || 1;
@@ -637,6 +725,8 @@ function normalizeState(raw) {
     ...raw,
     meta: { ...seedData.meta, ...(raw.meta ?? {}), version: 2 },
   };
+  normalized.meta.ashanaDate = normalizeAshanaDate(normalized.meta.ashanaDate);
+  normalized.meta.currentDate = formatAshanaDate(normalized.meta.ashanaDate);
   normalized.wiki = (raw.wiki ?? seedData.wiki).map(normalizeWikiArticle);
   normalized.characters = (raw.characters ?? seedData.characters).map(normalizeCharacter);
   if (!normalized.characters.some((character) => character.id === "richie-goldmann")) {
@@ -646,6 +736,8 @@ function normalizeState(raw) {
   normalized.factions = (raw.factions ?? seedData.factions).map(normalizeFaction);
   normalized.npcs = (raw.npcs ?? seedData.npcs).map(normalizeNpc);
   normalized.settlements = (raw.settlements ?? seedData.settlements).map(normalizeSettlement);
+  normalized.calendarEvents = (raw.calendarEvents ?? seedData.calendarEvents).map(normalizeCalendarEvent);
+  normalized.sessionLogs = (raw.sessionLogs ?? seedData.sessionLogs).map(normalizeSessionLog);
   normalized.gallery = (raw.gallery ?? seedData.gallery).map(normalizeGalleryItem);
   normalized.map = {
     ...seedData.map,
@@ -659,6 +751,61 @@ function normalizeState(raw) {
   normalized.map.selectedHex = raw.map?.selectedHex ?? seedData.map.selectedHex ?? "0,0";
   normalized.rolls = raw.rolls ?? [];
   return normalized;
+}
+
+function normalizeAshanaDate(date) {
+  const source = date && typeof date === "object" ? date : seedData.meta.ashanaDate;
+  return {
+    year: Math.max(1, Number(source.year || 1)),
+    month: Math.min(10, Math.max(1, Number(source.month || 1))),
+    day: Math.min(36, Math.max(1, Number(source.day || 1))),
+  };
+}
+
+function ashanaDateIndex(date) {
+  const normalized = normalizeAshanaDate(date);
+  return (normalized.year - 1) * 360 + (normalized.month - 1) * 36 + (normalized.day - 1);
+}
+
+function ashanaDateFromIndex(index) {
+  const safeIndex = Math.max(0, Number(index || 0));
+  return {
+    year: Math.floor(safeIndex / 360) + 1,
+    month: Math.floor((safeIndex % 360) / 36) + 1,
+    day: (safeIndex % 36) + 1,
+  };
+}
+
+function formatAshanaDate(date, withYear = true) {
+  const normalized = normalizeAshanaDate(date);
+  const monthName = ashanaMonths[normalized.month - 1] ?? `Месяц ${normalized.month}`;
+  const year = withYear ? `, ${normalized.year} год` : "";
+  return `${normalized.day} день месяца ${monthName}${year}`;
+}
+
+function ashanaWeekday(date) {
+  const normalized = normalizeAshanaDate(date);
+  return ashanaWeekdays[(normalized.day - 1) % 9] ?? `${((normalized.day - 1) % 9) + 1} день недели`;
+}
+
+function ashanaWeekNumber(date) {
+  return Math.floor((normalizeAshanaDate(date).day - 1) / 9) + 1;
+}
+
+function ashanaDateKey(date) {
+  const normalized = normalizeAshanaDate(date);
+  return `${normalized.year}-${normalized.month}-${normalized.day}`;
+}
+
+function ashanaDateFromKey(key) {
+  const [year, month, day] = String(key || "").split("-").map(Number);
+  return normalizeAshanaDate({ year, month, day });
+}
+
+function setCurrentAshanaDate(date) {
+  state.meta.ashanaDate = normalizeAshanaDate(date);
+  state.meta.currentDate = formatAshanaDate(state.meta.ashanaDate);
+  activeCalendarDateKey = ashanaDateKey(state.meta.ashanaDate);
 }
 
 function normalizeMapRegions(regions) {
@@ -869,6 +1016,44 @@ function normalizeSettlementLog(item) {
   };
 }
 
+function normalizeCalendarEvent(item) {
+  return {
+    id: item.id || slug(item.title || "event"),
+    title: item.title || "Новое событие",
+    type: item.type || "note",
+    date: normalizeAshanaDate(item.date),
+    public: item.public ?? true,
+    summary: item.summary || "",
+    gmNotes: item.gmNotes || "",
+    wikiLinks: Array.isArray(item.wikiLinks) ? item.wikiLinks : csv(item.wikiLinks ?? ""),
+    questLinks: Array.isArray(item.questLinks) ? item.questLinks : csv(item.questLinks ?? ""),
+    npcLinks: Array.isArray(item.npcLinks) ? item.npcLinks : csv(item.npcLinks ?? ""),
+    settlementLinks: Array.isArray(item.settlementLinks) ? item.settlementLinks : csv(item.settlementLinks ?? ""),
+    mapLinks: Array.isArray(item.mapLinks) ? item.mapLinks : csv(item.mapLinks ?? ""),
+  };
+}
+
+function normalizeSessionLog(item) {
+  return {
+    id: item.id || slug(item.title || "session"),
+    title: item.title || "Новая сессия",
+    sessionNumber: Number(item.sessionNumber || 1),
+    date: normalizeAshanaDate(item.date),
+    public: item.public ?? true,
+    players: item.players || "",
+    summary: item.summary || "",
+    decisions: item.decisions || "",
+    loot: item.loot || "",
+    consequences: item.consequences || "",
+    gmNotes: item.gmNotes || "",
+    wikiLinks: Array.isArray(item.wikiLinks) ? item.wikiLinks : csv(item.wikiLinks ?? ""),
+    questLinks: Array.isArray(item.questLinks) ? item.questLinks : csv(item.questLinks ?? ""),
+    npcLinks: Array.isArray(item.npcLinks) ? item.npcLinks : csv(item.npcLinks ?? ""),
+    settlementLinks: Array.isArray(item.settlementLinks) ? item.settlementLinks : csv(item.settlementLinks ?? ""),
+    mapLinks: Array.isArray(item.mapLinks) ? item.mapLinks : csv(item.mapLinks ?? ""),
+  };
+}
+
 function normalizeCharacter(character) {
   const base = characterDefaults();
   const normalized = {
@@ -1052,6 +1237,8 @@ async function loadCloudState() {
     await saveCloudState();
   }
   activeCharacterId = state.characters[0]?.id ?? null;
+  activeCalendarDateKey = ashanaDateKey(state.meta.ashanaDate);
+  activeSessionId = state.sessionLogs[0]?.id ?? null;
   mapZoom = state.map.zoom || 1;
   renderCharacterSelect();
   render();
@@ -1200,6 +1387,14 @@ function visibleSettlements() {
   return state.settlements.filter((settlement) => settlement.public || isAdmin);
 }
 
+function visibleCalendarEvents() {
+  return state.calendarEvents.filter((event) => event.public || isAdmin);
+}
+
+function visibleSessionLogs() {
+  return state.sessionLogs.filter((session) => session.public || isAdmin);
+}
+
 function setView(view, options = {}) {
   if (!options.skipWikiGuard && view !== currentView && !confirmWikiEditorLeave()) return false;
   currentView = view;
@@ -1303,6 +1498,8 @@ function render() {
     map: renderMap,
     directory: renderDirectory,
     settlements: renderSettlements,
+    calendar: renderCalendar,
+    sessions: renderSessions,
     characters: renderCharacters,
     gallery: renderGallery,
     quests: renderQuests,
@@ -1363,6 +1560,8 @@ function renderDashboard() {
       ["NPC", visibleNpcs().length],
       ["Фракции", visibleFactions().length],
       ["Поселения", visibleSettlements().length],
+      ["Сессии", visibleSessionLogs().length],
+      ["События", visibleCalendarEvents().length],
       ["Персонажи", state.characters.length],
       ["Броски", state.rolls.length],
     ])
@@ -3271,6 +3470,426 @@ function deleteSettlement(settlement) {
   render();
 }
 
+function openSettlement(settlementId) {
+  const settlement = visibleSettlements().find((item) => item.id === settlementId);
+  if (!settlement) return;
+  activeSettlementId = settlement.id;
+  setView("settlements");
+}
+
+function renderCalendar() {
+  const root = el("div");
+  const selectedDate = ashanaDateFromKey(activeCalendarDateKey || ashanaDateKey(state.meta.ashanaDate));
+  const action = isAdmin
+    ? actionRow([
+        button("+1 день", "primary-button", () => shiftCurrentDate(1)),
+        button("Новое событие", "ghost-button", () => addCalendarEvent(selectedDate)),
+      ])
+    : null;
+  root.append(header("Календарь", "Год Асханы: 360 дней, 10 месяцев по 36 дней, 4 недели по 9 дней.", action));
+
+  const layout = el("div", "calendar-layout");
+  const overview = el("section", "panel calendar-current");
+  overview.append(
+    el("p", "eyebrow", "Текущая дата"),
+    el("h3", "", formatAshanaDate(state.meta.ashanaDate)),
+    compactBadges([ashanaWeekday(state.meta.ashanaDate), `${ashanaWeekNumber(state.meta.ashanaDate)} неделя`, `${state.meta.ashanaDate.year} год`]),
+    metricGrid([
+      ["Месяц", ashanaMonths[state.meta.ashanaDate.month - 1]],
+      ["День", state.meta.ashanaDate.day],
+      ["Неделя", `${ashanaWeekNumber(state.meta.ashanaDate)} / 4`],
+      ["День года", (state.meta.ashanaDate.month - 1) * 36 + state.meta.ashanaDate.day],
+    ])
+  );
+  if (isAdmin) {
+    overview.append(actionRow([
+      button("-1 день", "ghost-button", () => shiftCurrentDate(-1)),
+      button("+9 дней", "ghost-button", () => shiftCurrentDate(9)),
+    ]));
+    overview.append(inlineEditor("Поставить точную дату", calendarDateEditor()));
+  }
+
+  const monthPanel = el("section", "panel calendar-month");
+  monthPanel.append(el("p", "eyebrow", "Месяц"), el("h3", "", ashanaMonths[selectedDate.month - 1]));
+  const monthControls = actionRow([
+    button("Пред. месяц", "ghost-button", () => shiftCalendarMonth(-1)),
+    button("Текущий месяц", "ghost-button", () => {
+      activeCalendarDateKey = ashanaDateKey(state.meta.ashanaDate);
+      render();
+    }),
+    button("След. месяц", "ghost-button", () => shiftCalendarMonth(1)),
+  ]);
+  monthPanel.append(monthControls);
+  const days = el("div", "calendar-days");
+  for (let day = 1; day <= 36; day += 1) {
+    const date = { year: selectedDate.year, month: selectedDate.month, day };
+    const events = eventsForDate(date);
+    const classes = [
+      "calendar-day",
+      ashanaDateKey(date) === ashanaDateKey(state.meta.ashanaDate) ? "current" : "",
+      ashanaDateKey(date) === activeCalendarDateKey ? "selected" : "",
+      events.length ? "has-events" : "",
+    ].filter(Boolean).join(" ");
+    const cell = button("", classes, () => {
+      activeCalendarDateKey = ashanaDateKey(date);
+      render();
+    });
+    cell.append(el("strong", "", day), el("span", "", ashanaWeekday(date).replace(" день", "")));
+    if (events.length) cell.append(el("small", "", events.length));
+    days.append(cell);
+  }
+  monthPanel.append(days);
+
+  const dayPanel = el("section", "panel calendar-day-panel");
+  const selectedEvents = eventsForDate(selectedDate);
+  dayPanel.append(
+    el("p", "eyebrow", "Выбранный день"),
+    el("h3", "", formatAshanaDate(selectedDate)),
+    compactBadges([ashanaWeekday(selectedDate), `${ashanaWeekNumber(selectedDate)} неделя`, `${selectedEvents.length} событий`])
+  );
+  if (isAdmin && ashanaDateKey(selectedDate) !== ashanaDateKey(state.meta.ashanaDate)) {
+    dayPanel.append(actionRow([button("Сделать текущей датой", "primary-button", () => {
+      setCurrentAshanaDate(selectedDate);
+      saveState();
+      render();
+    })]));
+  }
+  dayPanel.append(calendarEventsList(selectedEvents));
+  if (isAdmin) dayPanel.append(inlineEditor("Добавить событие на этот день", calendarEventEditor(normalizeCalendarEvent({ date: selectedDate }), true)));
+
+  layout.append(overview, monthPanel, dayPanel);
+  root.append(layout);
+  return root;
+}
+
+function shiftCurrentDate(delta) {
+  setCurrentAshanaDate(ashanaDateFromIndex(ashanaDateIndex(state.meta.ashanaDate) + delta));
+  saveState();
+  render();
+}
+
+function shiftCalendarMonth(delta) {
+  const selected = ashanaDateFromKey(activeCalendarDateKey);
+  const next = ashanaDateFromIndex(ashanaDateIndex({ ...selected, day: 1 }) + delta * 36);
+  activeCalendarDateKey = ashanaDateKey({ ...next, day: Math.min(selected.day, 36) });
+  render();
+}
+
+function eventsForDate(date) {
+  const key = ashanaDateKey(date);
+  return visibleCalendarEvents()
+    .filter((event) => ashanaDateKey(event.date) === key)
+    .sort((a, b) => optionLabel(calendarEventTypes, a.type).localeCompare(optionLabel(calendarEventTypes, b.type), "ru"));
+}
+
+function calendarEventsList(events) {
+  if (!events.length) return el("div", "empty-state compact-empty", "На этот день событий нет.");
+  const list = el("div", "calendar-event-list");
+  events.forEach((event) => {
+    const card = el("article", "calendar-event");
+    card.append(
+      compactBadges([optionLabel(calendarEventTypes, event.type), event.public ? "игрокам" : "скрыто"]),
+      el("h4", "", event.title),
+      el("p", "", event.summary || "Описание пока не заполнено."),
+      entityLinks(event)
+    );
+    if (isAdmin && event.gmNotes) card.append(el("p", "gm-inline", `GM: ${event.gmNotes}`));
+    if (isAdmin) card.append(inlineEditor("Редактировать событие", calendarEventEditor(event)));
+    list.append(card);
+  });
+  return list;
+}
+
+function calendarDateEditor() {
+  const form = el("form", "form-grid compact-form");
+  const year = input(state.meta.ashanaDate.year);
+  const month = selectInput(ashanaMonths.map((name, index) => [String(index + 1), name]), String(state.meta.ashanaDate.month));
+  const day = input(state.meta.ashanaDate.day);
+  day.type = "number";
+  day.min = 1;
+  day.max = 36;
+  year.type = "number";
+  year.min = 1;
+  form.append(
+    labelWrap("Год", year),
+    labelWrap("Месяц", month),
+    labelWrap("День", day),
+    actionRow([button("Сохранить дату", "primary-button", null, "submit")], "span-2")
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    setCurrentAshanaDate({ year: Number(year.value), month: Number(month.value), day: Number(day.value) });
+    saveState();
+    render();
+  });
+  return form;
+}
+
+function calendarEventEditor(event, create = false) {
+  const form = el("form", "form-grid");
+  const fields = linkedEntityFields(event);
+  const title = input(event.title);
+  const type = selectInput(calendarEventTypes, event.type);
+  const year = input(event.date.year);
+  const month = selectInput(ashanaMonths.map((name, index) => [String(index + 1), name]), String(event.date.month));
+  const day = input(event.date.day);
+  const summary = textarea(event.summary);
+  const gmNotes = textarea(event.gmNotes);
+  const publicInput = document.createElement("input");
+  publicInput.type = "checkbox";
+  publicInput.checked = event.public;
+  [year, day].forEach((item) => {
+    item.type = "number";
+    item.min = item === day ? 1 : 1;
+  });
+  day.max = 36;
+  form.append(
+    labelWrap("Название", title),
+    labelWrap("Тип", type),
+    labelWrap("Год", year),
+    labelWrap("Месяц", month),
+    labelWrap("День", day),
+    checkboxWrap("Видно игрокам", publicInput),
+    labelWrap("Описание", summary, "span-2"),
+    labelWrap("GM-заметки", gmNotes, "span-2"),
+    linkedEntityControls(fields),
+    actionRow([
+      button(create ? "Создать событие" : "Сохранить событие", "primary-button", null, "submit"),
+      ...(create ? [] : [button("Удалить событие", "ghost-button", () => deleteCalendarEvent(event))]),
+    ], "span-2")
+  );
+  form.addEventListener("submit", (submitEvent) => {
+    submitEvent.preventDefault();
+    const next = normalizeCalendarEvent({
+      ...event,
+      title: title.value,
+      type: type.value,
+      date: { year: Number(year.value), month: Number(month.value), day: Number(day.value) },
+      public: publicInput.checked,
+      summary: summary.value,
+      gmNotes: gmNotes.value,
+      ...readLinkedEntityFields(fields),
+    });
+    if (create) {
+      state.calendarEvents.unshift(next);
+      activeCalendarDateKey = ashanaDateKey(next.date);
+    } else {
+      Object.assign(event, next);
+    }
+    saveState();
+    render();
+  });
+  return form;
+}
+
+function addCalendarEvent(date = state.meta.ashanaDate) {
+  if (!isAdmin) return;
+  const event = normalizeCalendarEvent({
+    id: slug("event"),
+    title: "Новое событие",
+    type: "note",
+    date,
+    public: false,
+    summary: "Описание события.",
+  });
+  state.calendarEvents.unshift(event);
+  activeCalendarDateKey = ashanaDateKey(event.date);
+  saveState();
+  render();
+}
+
+function deleteCalendarEvent(event) {
+  if (!confirm(`Удалить событие "${event.title}"?`)) return;
+  state.calendarEvents = state.calendarEvents.filter((item) => item.id !== event.id);
+  saveState();
+  render();
+}
+
+function renderSessions() {
+  const root = el("div");
+  const action = isAdmin ? button("Новая запись", "primary-button", () => addSessionLog()) : null;
+  root.append(header("Журнал сессий", "Хроника решений партии, добычи, последствий и зацепок по игровым датам.", action));
+  const visible = visibleSessionLogs().sort((a, b) => ashanaDateIndex(b.date) - ashanaDateIndex(a.date) || b.sessionNumber - a.sessionNumber);
+  if (!visible.some((session) => session.id === activeSessionId)) activeSessionId = visible[0]?.id ?? null;
+  if (!visible.length) {
+    root.append(el("div", "empty-state", "Публичных записей журнала пока нет."));
+    return root;
+  }
+  const active = visible.find((session) => session.id === activeSessionId) ?? visible[0];
+  const layout = el("div", "session-layout");
+  const list = el("aside", "panel session-list");
+  list.append(el("p", "eyebrow", "Хроника"), el("h3", "", "Сессии"));
+  visible.forEach((session) => {
+    const item = button("", `session-list-card ${session.id === active.id ? "active" : ""}`, () => {
+      activeSessionId = session.id;
+      render();
+    });
+    item.append(
+      el("strong", "", `#${session.sessionNumber} ${session.title}`),
+      el("span", "", formatAshanaDate(session.date)),
+      compactBadges([session.public ? "игрокам" : "скрыто", session.players || "без состава"])
+    );
+    list.append(item);
+  });
+  layout.append(list, sessionDetail(active));
+  root.append(layout);
+  return root;
+}
+
+function sessionDetail(session) {
+  const detail = el("section", "panel session-detail");
+  detail.append(
+    el("p", "eyebrow", `Сессия #${session.sessionNumber}`),
+    el("h3", "", session.title),
+    compactBadges([formatAshanaDate(session.date), ashanaWeekday(session.date), session.public ? "игрокам" : "скрыто"]),
+    directoryMeta([
+      ["Состав", session.players],
+      ["Добыча", session.loot],
+    ])
+  );
+  detail.append(sessionTextBlock("Итоги", session.summary));
+  detail.append(sessionTextBlock("Решения партии", session.decisions));
+  detail.append(sessionTextBlock("Последствия", session.consequences));
+  detail.append(entityLinks(session));
+  if (isAdmin && session.gmNotes) detail.append(el("p", "gm-inline", `GM: ${session.gmNotes}`));
+  if (isAdmin) detail.append(inlineEditor("Редактировать запись", sessionEditor(session)));
+  return detail;
+}
+
+function sessionTextBlock(title, text) {
+  const block = el("section", "session-text-block");
+  block.append(el("h4", "", title), el("p", "", text || "Пока не заполнено."));
+  return block;
+}
+
+function sessionEditor(session) {
+  const form = el("form", "form-grid");
+  const fields = linkedEntityFields(session);
+  const title = input(session.title);
+  const sessionNumber = input(session.sessionNumber);
+  const year = input(session.date.year);
+  const month = selectInput(ashanaMonths.map((name, index) => [String(index + 1), name]), String(session.date.month));
+  const day = input(session.date.day);
+  const players = input(session.players);
+  const summary = textarea(session.summary);
+  const decisions = textarea(session.decisions);
+  const loot = textarea(session.loot);
+  const consequences = textarea(session.consequences);
+  const gmNotes = textarea(session.gmNotes);
+  const publicInput = document.createElement("input");
+  publicInput.type = "checkbox";
+  publicInput.checked = session.public;
+  [sessionNumber, year, day].forEach((item) => {
+    item.type = "number";
+    item.min = 1;
+  });
+  day.max = 36;
+  form.append(
+    labelWrap("Название", title),
+    labelWrap("Номер сессии", sessionNumber),
+    labelWrap("Год", year),
+    labelWrap("Месяц", month),
+    labelWrap("День", day),
+    labelWrap("Игроки/состав", players),
+    checkboxWrap("Видно игрокам", publicInput),
+    labelWrap("Итоги", summary, "span-2"),
+    labelWrap("Решения", decisions, "span-2"),
+    labelWrap("Добыча", loot, "span-2"),
+    labelWrap("Последствия", consequences, "span-2"),
+    labelWrap("GM-заметки", gmNotes, "span-2"),
+    linkedEntityControls(fields),
+    actionRow([
+      button("Сохранить запись", "primary-button", null, "submit"),
+      button("Удалить запись", "ghost-button", () => deleteSessionLog(session)),
+    ], "span-2")
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    Object.assign(session, normalizeSessionLog({
+      ...session,
+      title: title.value,
+      sessionNumber: Number(sessionNumber.value || 1),
+      date: { year: Number(year.value), month: Number(month.value), day: Number(day.value) },
+      public: publicInput.checked,
+      players: players.value,
+      summary: summary.value,
+      decisions: decisions.value,
+      loot: loot.value,
+      consequences: consequences.value,
+      gmNotes: gmNotes.value,
+      ...readLinkedEntityFields(fields),
+    }));
+    saveState();
+    render();
+  });
+  return form;
+}
+
+function addSessionLog() {
+  if (!isAdmin) return;
+  const nextNumber = Math.max(0, ...state.sessionLogs.map((session) => Number(session.sessionNumber || 0))) + 1;
+  const session = normalizeSessionLog({
+    id: slug("session"),
+    title: "Новая сессия",
+    sessionNumber: nextNumber,
+    date: state.meta.ashanaDate,
+    public: false,
+    summary: "Краткие итоги сессии.",
+  });
+  state.sessionLogs.unshift(session);
+  activeSessionId = session.id;
+  saveState();
+  render();
+}
+
+function deleteSessionLog(session) {
+  if (!confirm(`Удалить запись "${session.title}"?`)) return;
+  state.sessionLogs = state.sessionLogs.filter((item) => item.id !== session.id);
+  activeSessionId = visibleSessionLogs()[0]?.id ?? null;
+  saveState();
+  render();
+}
+
+function linkedEntityFields(source) {
+  return {
+    wikiLinks: checkboxList(visibleWiki().map((article) => [article.id, article.title]), source.wikiLinks),
+    questLinks: checkboxList(visibleQuests().map((quest) => [quest.id, quest.title]), source.questLinks),
+    npcLinks: checkboxList(visibleNpcs().map((npc) => [npc.id, npc.name]), source.npcLinks),
+    settlementLinks: checkboxList(visibleSettlements().map((settlement) => [settlement.id, settlement.name]), source.settlementLinks),
+    mapLinks: checkboxList(visibleMapRegions().map((region) => [region.id, region.title]), source.mapLinks),
+  };
+}
+
+function linkedEntityControls(fields) {
+  return fragment([
+    labelWrap("Связанные Wiki", fields.wikiLinks, "span-2"),
+    labelWrap("Связанные задания", fields.questLinks, "span-2"),
+    labelWrap("Связанные NPC", fields.npcLinks, "span-2"),
+    labelWrap("Связанные поселения", fields.settlementLinks, "span-2"),
+    labelWrap("Связанные карты", fields.mapLinks, "span-2"),
+  ]);
+}
+
+function readLinkedEntityFields(fields) {
+  return {
+    wikiLinks: checkedValues(fields.wikiLinks),
+    questLinks: checkedValues(fields.questLinks),
+    npcLinks: checkedValues(fields.npcLinks),
+    settlementLinks: checkedValues(fields.settlementLinks),
+    mapLinks: checkedValues(fields.mapLinks),
+  };
+}
+
+function entityLinks(source) {
+  return directoryLinks([
+    ...linkedWikiByIds(source.wikiLinks ?? []).map((article) => [`Wiki: ${article.title}`, () => openWikiArticle(article.id)]),
+    ...linkedQuestsByIds(source.questLinks ?? []).map((quest) => [`Задание: ${quest.title}`, () => openQuest(quest.id)]),
+    ...visibleNpcs().filter((npc) => (source.npcLinks ?? []).includes(npc.id)).map((npc) => [`NPC: ${npc.name}`, () => openNpc(npc.id)]),
+    ...visibleSettlements().filter((settlement) => (source.settlementLinks ?? []).includes(settlement.id)).map((settlement) => [`Поселение: ${settlement.name}`, () => openSettlement(settlement.id)]),
+    ...visibleMapRegions().filter((region) => (source.mapLinks ?? []).includes(region.id)).map((region) => [`Карта: ${region.title}`, () => selectSettlementMap(region.id)]),
+  ]);
+}
+
 function allGalleryTags() {
   return [...new Set(state.gallery.flatMap((item) => item.tags ?? []))].sort((a, b) => a.localeCompare(b));
 }
@@ -3545,18 +4164,27 @@ function campaignEditor() {
   const form = el("form", "form-grid");
   const name = input(state.meta.campaignName);
   const region = input(state.meta.currentRegion);
-  const date = input(state.meta.currentDate);
+  const year = input(state.meta.ashanaDate.year);
+  const month = selectInput(ashanaMonths.map((monthName, index) => [String(index + 1), monthName]), String(state.meta.ashanaDate.month));
+  const day = input(state.meta.ashanaDate.day);
+  year.type = "number";
+  year.min = 1;
+  day.type = "number";
+  day.min = 1;
+  day.max = 36;
   form.append(
-    labelWrap("Название", name),
-    labelWrap("Текущий регион", region),
-    labelWrap("Дата", date),
+    labelWrap("Название", name, "span-2"),
+    labelWrap("Текущий регион", region, "span-2"),
+    labelWrap("Год Асханы", year),
+    labelWrap("Месяц", month),
+    labelWrap("День", day),
     actionRow([button("Сохранить", "primary-button", null, "submit")], "span-2")
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     state.meta.campaignName = name.value;
     state.meta.currentRegion = region.value;
-    state.meta.currentDate = date.value;
+    setCurrentAshanaDate({ year: Number(year.value), month: Number(month.value), day: Number(day.value) });
     saveState();
     render();
   });
