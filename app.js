@@ -1168,7 +1168,6 @@ function wikiCategoryPage(categoryId, articles) {
   const grid = el("div", "category-article-grid");
   categoryArticles.forEach((article) => {
     const card = el("article", "category-article-card");
-    if (article.image) card.append(wikiImage(article, "wiki-card-image"));
     card.append(
       el("p", "eyebrow", article.public ? "игрокам" : "мастер"),
       el("h3", "", article.title),
