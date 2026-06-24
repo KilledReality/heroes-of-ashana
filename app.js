@@ -167,6 +167,37 @@ const influenceLevels = [
   ["major", "Огромное"],
 ];
 
+const settlementTypes = [
+  ["village", "Деревня"],
+  ["town", "Городок"],
+  ["city", "Город"],
+  ["fort", "Крепость"],
+  ["camp", "Лагерь"],
+  ["port", "Порт"],
+  ["estate", "Поместье"],
+  ["other", "Другое"],
+];
+
+const buildingStatuses = [
+  ["active", "Работает"],
+  ["building", "Строится"],
+  ["damaged", "Повреждена"],
+  ["abandoned", "Заброшена"],
+];
+
+const problemSeverities = [
+  ["low", "Низкая"],
+  ["medium", "Средняя"],
+  ["high", "Высокая"],
+  ["critical", "Критическая"],
+];
+
+const problemStatuses = [
+  ["active", "Активна"],
+  ["resolved", "Решена"],
+  ["hidden", "Скрыта"],
+];
+
 const seedData = {
   meta: {
     campaignName: "Герои Асханы",
@@ -336,6 +367,46 @@ const seedData = {
       lastSeen: "Третий милевой столб Серого Тракта",
       wikiLinks: ["grey-road"],
       questLinks: ["missing-caravan"],
+    },
+  ],
+  settlements: [
+    {
+      id: "grey-ford",
+      name: "Серый Брод",
+      type: "village",
+      ruler: "Совет старост",
+      factionId: "arvein-crown",
+      mapRegionId: "mezhi-canvas",
+      population: 420,
+      size: "малое поселение",
+      loyalty: 1,
+      security: 0,
+      economy: 1,
+      stability: 0,
+      threat: 1,
+      public: true,
+      tags: ["тракт", "деревня", "торговля"],
+      description: "Пограничное поселение у переправы на Сером Тракте. Живет торговлей, перевозом и снабжением караванов.",
+      gmNotes: "Часть старост покрывает контрабандистов, чтобы удержать поселение от голода.",
+      wikiLinks: ["grey-road"],
+      questLinks: ["missing-caravan"],
+      npcLinks: ["master-lior"],
+      buildings: [
+        { id: "market", name: "Рынок у переправы", type: "рынок", status: "active", income: 120, upkeep: 20, economy: 1, loyalty: 0, security: 0, stability: 0, threat: 0, notes: "Главный источник пошлин и слухов." },
+        { id: "watch-post", name: "Сторожевой пост", type: "стража", status: "active", income: 0, upkeep: 55, economy: 0, loyalty: 0, security: 1, stability: 1, threat: -1, notes: "Держит переправу, но людей не хватает." },
+        { id: "sun-shrine", name: "Святилище Солариса", type: "храм", status: "active", income: 20, upkeep: 10, economy: 0, loyalty: 1, security: 0, stability: 1, threat: 0, notes: "Место клятв, лечения и споров." },
+      ],
+      problems: [
+        { id: "smuggling", title: "Контрабанда на переправе", severity: "medium", status: "active", income: -45, loyalty: -1, security: -1, economy: 0, stability: 0, threat: 1, public: true, linkedQuest: "missing-caravan", notes: "Кто-то проводит грузы мимо пошлин и стражи." },
+        { id: "cult-signs", title: "Следы Пепельной Луны", severity: "high", status: "hidden", income: 0, loyalty: 0, security: -1, economy: 0, stability: -1, threat: 2, public: false, linkedQuest: "archive-key", notes: "Знаки нашли возле старого склада." },
+      ],
+      modifiers: [
+        { id: "trade-road", title: "Торговый тракт", income: 35, upkeep: 0, loyalty: 0, security: 0, economy: 1, stability: 0, threat: 0, notes: "Поток караванов дает деньги и проблемы." },
+        { id: "border-anxiety", title: "Пограничная тревога", income: 0, upkeep: 0, loyalty: -1, security: 0, economy: 0, stability: -1, threat: 1, notes: "Жители привыкли ждать беды с дороги." },
+      ],
+      log: [
+        { date: "17 день Золотого Пепла", text: "Партия прибыла к переправе и услышала о пропавшем караване.", public: true },
+      ],
     },
   ],
   characters: [
@@ -521,6 +592,7 @@ let activeWikiCategoryId = "";
 let wikiCategorySearchTerm = "";
 let wikiDraft = null;
 let activeDirectoryTab = "npcs";
+let activeSettlementId = state.settlements[0]?.id ?? null;
 let skillSearchTerm = "";
 let activeGalleryTag = "";
 let mapZoom = state.map.zoom || 1;
@@ -573,6 +645,7 @@ function normalizeState(raw) {
   normalized.quests = raw.quests ?? seedData.quests;
   normalized.factions = (raw.factions ?? seedData.factions).map(normalizeFaction);
   normalized.npcs = (raw.npcs ?? seedData.npcs).map(normalizeNpc);
+  normalized.settlements = (raw.settlements ?? seedData.settlements).map(normalizeSettlement);
   normalized.gallery = (raw.gallery ?? seedData.gallery).map(normalizeGalleryItem);
   normalized.map = {
     ...seedData.map,
@@ -694,6 +767,105 @@ function normalizeFaction(item) {
     wikiLinks: Array.isArray(item.wikiLinks) ? item.wikiLinks : csv(item.wikiLinks ?? ""),
     questLinks: Array.isArray(item.questLinks) ? item.questLinks : csv(item.questLinks ?? ""),
     npcLinks: Array.isArray(item.npcLinks) ? item.npcLinks : csv(item.npcLinks ?? ""),
+  };
+}
+
+function normalizeSettlement(item) {
+  return {
+    id: item.id || slug(item.name || "settlement"),
+    name: item.name || "Новое поселение",
+    type: item.type || "village",
+    ruler: item.ruler || "",
+    factionId: item.factionId || "",
+    mapRegionId: item.mapRegionId || "",
+    population: Number(item.population ?? 0),
+    size: item.size || "",
+    loyalty: Number(item.loyalty ?? 0),
+    security: Number(item.security ?? 0),
+    economy: Number(item.economy ?? 0),
+    stability: Number(item.stability ?? 0),
+    threat: Number(item.threat ?? 0),
+    public: item.public ?? true,
+    tags: Array.isArray(item.tags) ? item.tags : csv(item.tags ?? ""),
+    description: item.description || "",
+    gmNotes: item.gmNotes || "",
+    wikiLinks: Array.isArray(item.wikiLinks) ? item.wikiLinks : csv(item.wikiLinks ?? ""),
+    questLinks: Array.isArray(item.questLinks) ? item.questLinks : csv(item.questLinks ?? ""),
+    npcLinks: Array.isArray(item.npcLinks) ? item.npcLinks : csv(item.npcLinks ?? ""),
+    buildings: normalizeSettlementRows(item.buildings, normalizeBuilding),
+    problems: normalizeSettlementRows(item.problems, normalizeProblem),
+    modifiers: normalizeSettlementRows(item.modifiers, normalizeModifier),
+    log: normalizeSettlementRows(item.log, normalizeSettlementLog),
+  };
+}
+
+function normalizeSettlementRows(rows, normalizer) {
+  return Array.isArray(rows) ? rows.map(normalizer) : [];
+}
+
+function normalizeEffectNumber(value) {
+  return Number(value ?? 0) || 0;
+}
+
+function normalizeBuilding(item) {
+  return {
+    id: item.id || slug(item.name || "building"),
+    name: item.name || "Постройка",
+    type: item.type || "",
+    status: item.status || "active",
+    income: normalizeEffectNumber(item.income),
+    upkeep: normalizeEffectNumber(item.upkeep),
+    loyalty: normalizeEffectNumber(item.loyalty),
+    security: normalizeEffectNumber(item.security),
+    economy: normalizeEffectNumber(item.economy),
+    stability: normalizeEffectNumber(item.stability),
+    threat: normalizeEffectNumber(item.threat),
+    responsibleNpc: item.responsibleNpc || "",
+    linkedQuest: item.linkedQuest || "",
+    notes: item.notes || "",
+  };
+}
+
+function normalizeProblem(item) {
+  return {
+    id: item.id || slug(item.title || "problem"),
+    title: item.title || "Проблема",
+    severity: item.severity || "medium",
+    status: item.status || "active",
+    income: normalizeEffectNumber(item.income),
+    upkeep: normalizeEffectNumber(item.upkeep),
+    loyalty: normalizeEffectNumber(item.loyalty),
+    security: normalizeEffectNumber(item.security),
+    economy: normalizeEffectNumber(item.economy),
+    stability: normalizeEffectNumber(item.stability),
+    threat: normalizeEffectNumber(item.threat),
+    public: item.public ?? true,
+    linkedQuest: item.linkedQuest || "",
+    deadline: item.deadline || "",
+    notes: item.notes || "",
+  };
+}
+
+function normalizeModifier(item) {
+  return {
+    id: item.id || slug(item.title || "modifier"),
+    title: item.title || "Модификатор",
+    income: normalizeEffectNumber(item.income),
+    upkeep: normalizeEffectNumber(item.upkeep),
+    loyalty: normalizeEffectNumber(item.loyalty),
+    security: normalizeEffectNumber(item.security),
+    economy: normalizeEffectNumber(item.economy),
+    stability: normalizeEffectNumber(item.stability),
+    threat: normalizeEffectNumber(item.threat),
+    notes: item.notes || "",
+  };
+}
+
+function normalizeSettlementLog(item) {
+  return {
+    date: item.date || "",
+    text: item.text || "",
+    public: item.public ?? true,
   };
 }
 
@@ -1024,6 +1196,10 @@ function visibleFactions() {
   return state.factions.filter((faction) => faction.public || isAdmin);
 }
 
+function visibleSettlements() {
+  return state.settlements.filter((settlement) => settlement.public || isAdmin);
+}
+
 function setView(view, options = {}) {
   if (!options.skipWikiGuard && view !== currentView && !confirmWikiEditorLeave()) return false;
   currentView = view;
@@ -1126,6 +1302,7 @@ function render() {
     wiki: renderWiki,
     map: renderMap,
     directory: renderDirectory,
+    settlements: renderSettlements,
     characters: renderCharacters,
     gallery: renderGallery,
     quests: renderQuests,
@@ -1185,6 +1362,7 @@ function renderDashboard() {
       ["Задания", visibleQuests().length],
       ["NPC", visibleNpcs().length],
       ["Фракции", visibleFactions().length],
+      ["Поселения", visibleSettlements().length],
       ["Персонажи", state.characters.length],
       ["Броски", state.rolls.length],
     ])
@@ -2770,6 +2948,327 @@ function relationTone(value) {
 function relationText(value) {
   const relation = Number(value || 0);
   return `отношение ${relation > 0 ? "+" : ""}${relation}`;
+}
+
+function renderSettlements() {
+  const root = el("div");
+  const action = isAdmin ? button("Новое поселение", "primary-button", () => addSettlement()) : null;
+  root.append(header("Поселения", "Владения партии: постройки, доходы, проблемы, модификаторы и управление.", action));
+
+  const visible = visibleSettlements();
+  if (!visible.some((settlement) => settlement.id === activeSettlementId)) activeSettlementId = visible[0]?.id ?? null;
+  if (!visible.length) {
+    root.append(el("div", "empty-state", "Публичных поселений пока нет."));
+    return root;
+  }
+
+  const active = visible.find((settlement) => settlement.id === activeSettlementId) ?? visible[0];
+  const layout = el("div", "settlement-layout");
+  const list = el("aside", "panel settlement-list");
+  list.append(el("p", "eyebrow", "Домены"), el("h3", "", "Поселения"));
+  visible.forEach((settlement) => {
+    const summary = settlementEconomy(settlement);
+    const item = button("", `settlement-list-card ${settlement.id === active.id ? "active" : ""}`, () => {
+      activeSettlementId = settlement.id;
+      render();
+    });
+    item.append(
+      el("strong", "", settlement.name),
+      el("span", "", `${optionLabel(settlementTypes, settlement.type)} · ${formatGold(summary.net)} / месяц`),
+      compactBadges([settlement.public ? "игрокам" : "скрыто", `угроза ${summary.threat}`])
+    );
+    list.append(item);
+  });
+  if (isAdmin) list.append(actionRow([button("Добавить поселение", "primary-button", () => addSettlement())]));
+  layout.append(list, settlementDetail(active));
+  root.append(layout);
+  return root;
+}
+
+function settlementDetail(settlement) {
+  const detail = el("section", "panel settlement-detail");
+  const economy = settlementEconomy(settlement);
+  const faction = factionById(settlement.factionId);
+  const linkedMap = state.map.regions.find((region) => region.id === settlement.mapRegionId);
+  detail.append(
+    el("p", "eyebrow", optionLabel(settlementTypes, settlement.type)),
+    el("h3", "", settlement.name),
+    compactBadges([settlement.size, `${settlement.population} жителей`, settlement.public ? "игрокам" : "скрыто"]),
+    el("p", "settlement-description", settlement.description || "Описание пока не заполнено.")
+  );
+  detail.append(metricGrid([
+    ["Доход", formatGold(economy.income)],
+    ["Содержание", formatGold(-economy.upkeep)],
+    ["Итог", formatGold(economy.net)],
+    ["Лояльность", signed(economy.loyalty)],
+    ["Безопасность", signed(economy.security)],
+    ["Экономика", signed(economy.economy)],
+    ["Стабильность", signed(economy.stability)],
+    ["Угроза", signed(economy.threat)],
+  ]));
+  detail.append(directoryMeta([
+    ["Управляющий", settlement.ruler],
+    ["Фракция", faction?.name],
+    ["Карта", linkedMap?.title],
+  ]));
+  detail.append(directoryLinks([
+    ...(faction ? [[`Фракция: ${faction.name}`, () => openFaction(faction.id)]] : []),
+    ...(linkedMap ? [[`Карта: ${linkedMap.title}`, () => selectSettlementMap(linkedMap.id)]] : []),
+    ...linkedWikiByIds(settlement.wikiLinks).map((article) => [`Wiki: ${article.title}`, () => openWikiArticle(article.id)]),
+    ...linkedQuestsByIds(settlement.questLinks).map((quest) => [`Задание: ${quest.title}`, () => openQuest(quest.id)]),
+    ...visibleNpcs().filter((npc) => settlement.npcLinks.includes(npc.id)).map((npc) => [`NPC: ${npc.name}`, () => openNpc(npc.id)]),
+  ]));
+  detail.append(settlementSection("Постройки", settlementBuildingsView(settlement)));
+  detail.append(settlementSection("Проблемы", settlementProblemsView(settlement)));
+  detail.append(settlementSection("Модификаторы", settlementModifiersView(settlement)));
+  detail.append(settlementSection("Журнал управления", settlementLogView(settlement)));
+  if (isAdmin && settlement.gmNotes) detail.append(el("p", "gm-inline", `GM: ${settlement.gmNotes}`));
+  if (isAdmin) detail.append(inlineEditor("Редактировать поселение", settlementEditor(settlement)));
+  return detail;
+}
+
+function settlementSection(title, content) {
+  const section = el("section", "settlement-section");
+  section.append(el("h4", "", title), content);
+  return section;
+}
+
+function settlementBuildingsView(settlement) {
+  const visibleBuildings = settlement.buildings.filter((building) => isAdmin || building.status !== "abandoned");
+  if (!visibleBuildings.length) return el("p", "muted", "Построек пока нет.");
+  const grid = el("div", "settlement-item-grid");
+  visibleBuildings.forEach((building) => {
+    const card = el("article", "settlement-item");
+    card.append(
+      el("strong", "", building.name),
+      compactBadges([building.type, optionLabel(buildingStatuses, building.status), `${formatGold(building.income - building.upkeep)}/мес`]),
+      el("p", "", building.notes || "Без заметок."),
+      compactBadges(effectBadges(building))
+    );
+    grid.append(card);
+  });
+  return grid;
+}
+
+function settlementProblemsView(settlement) {
+  const visibleProblems = settlement.problems.filter((problem) => problem.status !== "hidden" || isAdmin).filter((problem) => problem.public || isAdmin);
+  if (!visibleProblems.length) return el("p", "muted", "Активных проблем пока нет.");
+  const grid = el("div", "settlement-item-grid");
+  visibleProblems.forEach((problem) => {
+    const card = el("article", `settlement-item problem-${problem.severity}`);
+    const quest = state.quests.find((item) => item.id === problem.linkedQuest);
+    card.append(
+      el("strong", "", problem.title),
+      compactBadges([optionLabel(problemSeverities, problem.severity), optionLabel(problemStatuses, problem.status), problem.public ? "игрокам" : "скрыто"]),
+      el("p", "", problem.notes || "Без заметок."),
+      compactBadges(effectBadges(problem))
+    );
+    if (quest) card.append(button(`Задание: ${quest.title}`, "map-link-button", () => openQuest(quest.id)));
+    grid.append(card);
+  });
+  return grid;
+}
+
+function settlementModifiersView(settlement) {
+  if (!settlement.modifiers.length) return el("p", "muted", "Модификаторов пока нет.");
+  const grid = el("div", "settlement-item-grid");
+  settlement.modifiers.forEach((modifier) => {
+    const card = el("article", "settlement-item");
+    card.append(
+      el("strong", "", modifier.title),
+      el("p", "", modifier.notes || "Без заметок."),
+      compactBadges(effectBadges(modifier))
+    );
+    grid.append(card);
+  });
+  return grid;
+}
+
+function settlementLogView(settlement) {
+  const entries = settlement.log.filter((entry) => entry.public || isAdmin);
+  if (!entries.length) return el("p", "muted", "Журнал пока пуст.");
+  const list = el("div", "settlement-log");
+  entries.forEach((entry) => {
+    const item = el("div", "settlement-log-item");
+    item.append(el("span", "", entry.date || "без даты"), el("p", "", entry.text));
+    list.append(item);
+  });
+  return list;
+}
+
+function settlementEconomy(settlement) {
+  const activeBuildings = settlement.buildings.filter((item) => item.status === "active");
+  const activeProblems = settlement.problems.filter((item) => item.status === "active");
+  const allEffects = [...activeBuildings, ...activeProblems, ...settlement.modifiers];
+  const totals = {
+    income: sumBy(allEffects, "income"),
+    upkeep: sumBy(allEffects, "upkeep"),
+    loyalty: settlement.loyalty + sumBy(allEffects, "loyalty"),
+    security: settlement.security + sumBy(allEffects, "security"),
+    economy: settlement.economy + sumBy(allEffects, "economy"),
+    stability: settlement.stability + sumBy(allEffects, "stability"),
+    threat: settlement.threat + sumBy(allEffects, "threat"),
+  };
+  totals.net = totals.income - totals.upkeep;
+  return totals;
+}
+
+function sumBy(items, key) {
+  return items.reduce((sum, item) => sum + normalizeEffectNumber(item[key]), 0);
+}
+
+function effectBadges(item) {
+  return [
+    item.income ? `доход ${formatGold(item.income)}` : "",
+    item.upkeep ? `содержание ${formatGold(-item.upkeep)}` : "",
+    item.loyalty ? `лояльность ${signed(item.loyalty)}` : "",
+    item.security ? `безопасность ${signed(item.security)}` : "",
+    item.economy ? `экономика ${signed(item.economy)}` : "",
+    item.stability ? `стабильность ${signed(item.stability)}` : "",
+    item.threat ? `угроза ${signed(item.threat)}` : "",
+  ].filter(Boolean);
+}
+
+function formatGold(value) {
+  const number = Number(value || 0);
+  return `${number > 0 ? "+" : ""}${number} зм`;
+}
+
+function selectSettlementMap(regionId) {
+  if (!setView("map")) return;
+  selectMapRegion(regionId);
+}
+
+function settlementEditor(settlement) {
+  const form = el("form", "form-grid");
+  const fields = {
+    name: input(settlement.name),
+    type: selectInput(settlementTypes, settlement.type),
+    ruler: input(settlement.ruler),
+    factionId: selectInput([["", "Без фракции"], ...state.factions.map((faction) => [faction.id, faction.name])], settlement.factionId),
+    mapRegionId: selectInput([["", "Без карты"], ...state.map.regions.map((region) => [region.id, region.title])], settlement.mapRegionId),
+    population: input(settlement.population),
+    size: input(settlement.size),
+    loyalty: input(settlement.loyalty),
+    security: input(settlement.security),
+    economy: input(settlement.economy),
+    stability: input(settlement.stability),
+    threat: input(settlement.threat),
+    tags: input(settlement.tags.join(", ")),
+    description: textarea(settlement.description),
+    gmNotes: textarea(settlement.gmNotes),
+    public: document.createElement("input"),
+    wikiLinks: checkboxList(visibleWiki().map((article) => [article.id, article.title]), settlement.wikiLinks),
+    questLinks: checkboxList(visibleQuests().map((quest) => [quest.id, quest.title]), settlement.questLinks),
+    npcLinks: checkboxList(state.npcs.map((npc) => [npc.id, npc.name]), settlement.npcLinks),
+    buildings: textarea(JSON.stringify(settlement.buildings, null, 2)),
+    problems: textarea(JSON.stringify(settlement.problems, null, 2)),
+    modifiers: textarea(JSON.stringify(settlement.modifiers, null, 2)),
+    log: textarea(JSON.stringify(settlement.log, null, 2)),
+  };
+  fields.public.type = "checkbox";
+  fields.public.checked = settlement.public;
+  [fields.buildings, fields.problems, fields.modifiers, fields.log].forEach((control) => control.classList.add("json-editor", "compact-json"));
+  form.append(
+    labelWrap("Название", fields.name),
+    labelWrap("Тип", fields.type),
+    labelWrap("Управляющий", fields.ruler),
+    labelWrap("Фракция", fields.factionId),
+    labelWrap("Карта", fields.mapRegionId),
+    labelWrap("Население", fields.population),
+    labelWrap("Размер", fields.size),
+    checkboxWrap("Видно игрокам", fields.public),
+    el("h3", "span-2", "Базовые показатели"),
+    labelWrap("Лояльность", fields.loyalty),
+    labelWrap("Безопасность", fields.security),
+    labelWrap("Экономика", fields.economy),
+    labelWrap("Стабильность", fields.stability),
+    labelWrap("Угроза", fields.threat),
+    labelWrap("Теги", fields.tags, "span-2"),
+    labelWrap("Описание", fields.description, "span-2"),
+    labelWrap("GM-заметки", fields.gmNotes, "span-2"),
+    labelWrap("Связанные Wiki", fields.wikiLinks, "span-2"),
+    labelWrap("Связанные задания", fields.questLinks, "span-2"),
+    labelWrap("Связанные NPC", fields.npcLinks, "span-2"),
+    el("h3", "span-2", "Экономика и события"),
+    labelWrap("Постройки JSON", fields.buildings, "span-2"),
+    labelWrap("Проблемы JSON", fields.problems, "span-2"),
+    labelWrap("Модификаторы JSON", fields.modifiers, "span-2"),
+    labelWrap("Журнал JSON", fields.log, "span-2"),
+    actionRow([
+      button("Сохранить поселение", "primary-button", null, "submit"),
+      button("Удалить поселение", "ghost-button", () => deleteSettlement(settlement)),
+    ], "span-2")
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    let parsed;
+    try {
+      parsed = {
+        buildings: JSON.parse(fields.buildings.value || "[]"),
+        problems: JSON.parse(fields.problems.value || "[]"),
+        modifiers: JSON.parse(fields.modifiers.value || "[]"),
+        log: JSON.parse(fields.log.value || "[]"),
+      };
+    } catch {
+      alert("JSON поселения не сохранен: проверь скобки, кавычки и запятые в постройках/проблемах/модификаторах/журнале.");
+      return;
+    }
+    Object.assign(settlement, normalizeSettlement({
+      ...settlement,
+      name: fields.name.value,
+      type: fields.type.value,
+      ruler: fields.ruler.value,
+      factionId: fields.factionId.value,
+      mapRegionId: fields.mapRegionId.value,
+      population: Number(fields.population.value || 0),
+      size: fields.size.value,
+      loyalty: Number(fields.loyalty.value || 0),
+      security: Number(fields.security.value || 0),
+      economy: Number(fields.economy.value || 0),
+      stability: Number(fields.stability.value || 0),
+      threat: Number(fields.threat.value || 0),
+      public: fields.public.checked,
+      tags: csv(fields.tags.value),
+      description: fields.description.value,
+      gmNotes: fields.gmNotes.value,
+      wikiLinks: checkedValues(fields.wikiLinks),
+      questLinks: checkedValues(fields.questLinks),
+      npcLinks: checkedValues(fields.npcLinks),
+      ...parsed,
+    }));
+    saveState();
+    render();
+  });
+  return form;
+}
+
+function addSettlement() {
+  if (!isAdmin) return;
+  const settlement = normalizeSettlement({
+    id: slug("settlement"),
+    name: "Новое поселение",
+    type: "village",
+    public: false,
+    tags: ["новое"],
+    description: "Новое владение партии.",
+    buildings: [],
+    problems: [],
+    modifiers: [],
+    log: [],
+  });
+  state.settlements.unshift(settlement);
+  activeSettlementId = settlement.id;
+  saveState();
+  render();
+}
+
+function deleteSettlement(settlement) {
+  if (!confirm(`Удалить поселение "${settlement.name}"?`)) return;
+  state.settlements = state.settlements.filter((item) => item.id !== settlement.id);
+  activeSettlementId = visibleSettlements()[0]?.id ?? null;
+  saveState();
+  render();
 }
 
 function allGalleryTags() {

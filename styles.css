@@ -918,6 +918,136 @@ label {
   font-weight: 800;
 }
 
+.settlement-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.settlement-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settlement-list h3 {
+  margin: 0;
+}
+
+.settlement-list-card {
+  width: 100%;
+  min-height: 0;
+  padding: 12px;
+  display: grid;
+  gap: 7px;
+  text-align: left;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.settlement-list-card:hover,
+.settlement-list-card.active {
+  border-color: rgba(212, 167, 79, 0.52);
+  background: rgba(212, 167, 79, 0.11);
+}
+
+.settlement-list-card span {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.settlement-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.settlement-detail h3 {
+  margin: 0;
+  font-size: 1.55rem;
+}
+
+.settlement-description {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.settlement-section {
+  padding: 13px;
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.settlement-section h4 {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.settlement-item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.settlement-item {
+  padding: 11px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(16, 19, 21, 0.42);
+}
+
+.settlement-item.problem-high,
+.settlement-item.problem-critical {
+  border-color: rgba(220, 111, 100, 0.34);
+  background: rgba(220, 111, 100, 0.065);
+}
+
+.settlement-item strong {
+  color: var(--paper-strong);
+}
+
+.settlement-item p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.settlement-log {
+  display: grid;
+  gap: 8px;
+}
+
+.settlement-log-item {
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settlement-log-item span {
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.settlement-log-item p {
+  margin: 0;
+  color: var(--paper-strong);
+  line-height: 1.45;
+}
+
 .map-stage {
   position: relative;
   overflow: hidden;
@@ -1724,7 +1854,8 @@ label {
   .wiki-layout,
   .character-layout,
   .roller-layout,
-  .map-layout {
+  .map-layout,
+  .settlement-layout {
     grid-template-columns: 1fr;
   }
 
