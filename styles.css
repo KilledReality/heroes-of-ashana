@@ -794,6 +794,130 @@ label {
   object-fit: cover;
 }
 
+.directory-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.directory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.directory-card {
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(23, 28, 32, 0.84);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.16);
+}
+
+.directory-card.relation-good,
+.directory-card.relation-warm {
+  border-color: rgba(121, 180, 109, 0.26);
+}
+
+.directory-card.relation-bad,
+.directory-card.relation-cold {
+  border-color: rgba(220, 111, 100, 0.28);
+}
+
+.directory-card-head {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.directory-portrait {
+  width: 72px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(212, 167, 79, 0.32);
+  border-radius: 8px;
+  color: #101315;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  font-weight: 900;
+}
+
+.directory-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.directory-title {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.directory-title h3 {
+  margin: 0;
+  font-size: 1.12rem;
+}
+
+.directory-title p,
+.directory-description,
+.gm-inline {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.directory-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.directory-meta-item {
+  padding: 9px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.directory-meta-item span {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.directory-meta-item strong {
+  color: var(--paper-strong);
+  line-height: 1.3;
+}
+
+.gm-inline {
+  padding: 10px;
+  border: 1px solid rgba(220, 111, 100, 0.28);
+  border-radius: 8px;
+  background: rgba(220, 111, 100, 0.07);
+}
+
+.inline-editor {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.inline-editor summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 800;
+}
+
 .map-stage {
   position: relative;
   overflow: hidden;

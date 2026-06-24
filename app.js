@@ -133,6 +133,40 @@ const mapTypes = [
   ["Другое", "Другое"],
 ];
 
+const npcTypes = [
+  ["ally", "Союзник"],
+  ["neutral", "Нейтрал"],
+  ["enemy", "Враг"],
+  ["merchant", "Торговец"],
+  ["patron", "Заказчик"],
+  ["unknown", "Неизвестно"],
+];
+
+const npcStatuses = [
+  ["alive", "Жив"],
+  ["dead", "Мертв"],
+  ["missing", "Пропал"],
+  ["hidden", "Скрыт"],
+  ["unknown", "Неизвестно"],
+];
+
+const factionTypes = [
+  ["state", "Государство"],
+  ["cult", "Культ"],
+  ["guild", "Гильдия"],
+  ["order", "Орден"],
+  ["family", "Семья"],
+  ["army", "Армия"],
+  ["other", "Другое"],
+];
+
+const influenceLevels = [
+  ["low", "Низкое"],
+  ["medium", "Среднее"],
+  ["high", "Высокое"],
+  ["major", "Огромное"],
+];
+
 const seedData = {
   meta: {
     campaignName: "Герои Асханы",
@@ -218,6 +252,90 @@ const seedData = {
       linked: "Черный Архив",
       notes: "Запись скрыта от игроков.",
       gmNotes: "Ключ находится у городского писаря, который не знает его назначения.",
+    },
+  ],
+  factions: [
+    {
+      id: "arvein-crown",
+      name: "Корона Арвейна",
+      type: "state",
+      leader: "Северный двор",
+      headquarters: "Арвейн",
+      relation: 1,
+      influence: "major",
+      public: true,
+      image: "",
+      tags: ["север", "политика", "люди"],
+      description: "Северное королевство с сильной пограничной властью, старой знатью и интересом к торговым дорогам Межей.",
+      gmNotes: "Внутри двора есть несколько групп, которые по-разному смотрят на самостоятельность пограничных баронств.",
+      goals: "Удержать дороги, налоги и военное присутствие на северных рубежах.",
+      resources: "Пограничные крепости, законники, рыцарские дома, сборщики пошлин.",
+      allies: [],
+      enemies: [],
+      wikiLinks: ["arvein"],
+      questLinks: ["missing-caravan"],
+      npcLinks: [],
+    },
+    {
+      id: "ash-moon-cult",
+      name: "Культ Пепельной Луны",
+      type: "cult",
+      leader: "Неизвестно",
+      headquarters: "Скрыто",
+      relation: -4,
+      influence: "medium",
+      public: false,
+      image: "",
+      tags: ["культ", "секрет", "угроза"],
+      description: "Слухи о культе, который появляется возле исчезнувших караванов и старых руин.",
+      gmNotes: "Разведчики культа проверяют Серый Тракт и ищут ключи к Черному Архиву.",
+      goals: "Открыть путь к архиву и собрать запрещенные тексты.",
+      resources: "Агенты, тайники, подкупленные писари.",
+      allies: [],
+      enemies: ["arvein-crown"],
+      wikiLinks: ["black-archive"],
+      questLinks: ["archive-key"],
+      npcLinks: [],
+    },
+  ],
+  npcs: [
+    {
+      id: "sister-eyrin",
+      name: "Сестра Эйрин",
+      type: "patron",
+      ancestry: "человек",
+      role: "жрица Солариса",
+      factionId: "arvein-crown",
+      location: "Храм Солариса",
+      relation: 2,
+      status: "alive",
+      public: true,
+      portrait: "",
+      tags: ["свет", "храм", "заказчик"],
+      description: "Спокойная жрица, которая попросила партию разобраться с темнеющей алтарной печатью.",
+      gmNotes: "Знает больше о ложной клятве храмового рыцаря, но пока не готова говорить прямо.",
+      lastSeen: "Храм Солариса",
+      wikiLinks: ["solaris"],
+      questLinks: ["oath-temple"],
+    },
+    {
+      id: "master-lior",
+      name: "Мастер Лиор",
+      type: "neutral",
+      ancestry: "человек",
+      role: "караванный мастер",
+      factionId: "arvein-crown",
+      location: "Серый Тракт",
+      relation: 0,
+      status: "missing",
+      public: true,
+      portrait: "",
+      tags: ["караван", "пропал", "торговля"],
+      description: "Караванный мастер, чей пропавший обоз стал поводом для расследования на Сером Тракте.",
+      gmNotes: "Его караван захватили не разбойники, а разведчики культа.",
+      lastSeen: "Третий милевой столб Серого Тракта",
+      wikiLinks: ["grey-road"],
+      questLinks: ["missing-caravan"],
     },
   ],
   characters: [
@@ -402,6 +520,7 @@ let activeWikiTag = "";
 let activeWikiCategoryId = "";
 let wikiCategorySearchTerm = "";
 let wikiDraft = null;
+let activeDirectoryTab = "npcs";
 let skillSearchTerm = "";
 let activeGalleryTag = "";
 let mapZoom = state.map.zoom || 1;
@@ -452,6 +571,8 @@ function normalizeState(raw) {
     normalized.characters.unshift(normalizeCharacter(seedData.characters[0]));
   }
   normalized.quests = raw.quests ?? seedData.quests;
+  normalized.factions = (raw.factions ?? seedData.factions).map(normalizeFaction);
+  normalized.npcs = (raw.npcs ?? seedData.npcs).map(normalizeNpc);
   normalized.gallery = (raw.gallery ?? seedData.gallery).map(normalizeGalleryItem);
   normalized.map = {
     ...seedData.map,
@@ -527,6 +648,52 @@ function normalizeGalleryItem(item) {
     imageStyle: { ...defaultImageStyle(), ...(item.imageStyle ?? {}) },
     tags: Array.isArray(item.tags) ? item.tags : csv(item.tags ?? item.type ?? ""),
     palette: Array.isArray(item.palette) ? item.palette : ["#d4a74f", "#4da9a7", "#111719"],
+  };
+}
+
+function normalizeNpc(item) {
+  return {
+    id: item.id || slug(item.name || "npc"),
+    name: item.name || "Новый NPC",
+    type: item.type || "neutral",
+    ancestry: item.ancestry || "",
+    role: item.role || "",
+    factionId: item.factionId || "",
+    location: item.location || "",
+    relation: Number(item.relation ?? 0),
+    status: item.status || "alive",
+    public: item.public ?? true,
+    portrait: item.portrait || "",
+    tags: Array.isArray(item.tags) ? item.tags : csv(item.tags ?? ""),
+    description: item.description || "",
+    gmNotes: item.gmNotes || "",
+    lastSeen: item.lastSeen || "",
+    wikiLinks: Array.isArray(item.wikiLinks) ? item.wikiLinks : csv(item.wikiLinks ?? ""),
+    questLinks: Array.isArray(item.questLinks) ? item.questLinks : csv(item.questLinks ?? ""),
+  };
+}
+
+function normalizeFaction(item) {
+  return {
+    id: item.id || slug(item.name || "faction"),
+    name: item.name || "Новая фракция",
+    type: item.type || "other",
+    leader: item.leader || "",
+    headquarters: item.headquarters || "",
+    relation: Number(item.relation ?? 0),
+    influence: item.influence || "medium",
+    public: item.public ?? true,
+    image: item.image || "",
+    tags: Array.isArray(item.tags) ? item.tags : csv(item.tags ?? ""),
+    description: item.description || "",
+    gmNotes: item.gmNotes || "",
+    goals: item.goals || "",
+    resources: item.resources || "",
+    allies: Array.isArray(item.allies) ? item.allies : csv(item.allies ?? ""),
+    enemies: Array.isArray(item.enemies) ? item.enemies : csv(item.enemies ?? ""),
+    wikiLinks: Array.isArray(item.wikiLinks) ? item.wikiLinks : csv(item.wikiLinks ?? ""),
+    questLinks: Array.isArray(item.questLinks) ? item.questLinks : csv(item.questLinks ?? ""),
+    npcLinks: Array.isArray(item.npcLinks) ? item.npcLinks : csv(item.npcLinks ?? ""),
   };
 }
 
@@ -729,6 +896,12 @@ function compactStateForStorage(source) {
   compact.gallery?.forEach((item) => {
     if (isEmbeddedImage(item.image)) item.image = "";
   });
+  compact.npcs?.forEach((item) => {
+    if (isEmbeddedImage(item.portrait)) item.portrait = "";
+  });
+  compact.factions?.forEach((item) => {
+    if (isEmbeddedImage(item.image)) item.image = "";
+  });
   compact.characters?.forEach((character) => {
     if (isEmbeddedImage(character.portrait)) character.portrait = "";
   });
@@ -843,6 +1016,14 @@ function visibleQuests() {
   return state.quests.filter((quest) => quest.status !== "hidden" || isAdmin);
 }
 
+function visibleNpcs() {
+  return state.npcs.filter((npc) => npc.public || isAdmin);
+}
+
+function visibleFactions() {
+  return state.factions.filter((faction) => faction.public || isAdmin);
+}
+
 function setView(view, options = {}) {
   if (!options.skipWikiGuard && view !== currentView && !confirmWikiEditorLeave()) return false;
   currentView = view;
@@ -944,6 +1125,7 @@ function render() {
     dashboard: renderDashboard,
     wiki: renderWiki,
     map: renderMap,
+    directory: renderDirectory,
     characters: renderCharacters,
     gallery: renderGallery,
     quests: renderQuests,
@@ -1001,6 +1183,8 @@ function renderDashboard() {
     metricGrid([
       ["Wiki", visibleWiki().length],
       ["Задания", visibleQuests().length],
+      ["NPC", visibleNpcs().length],
+      ["Фракции", visibleFactions().length],
       ["Персонажи", state.characters.length],
       ["Броски", state.rolls.length],
     ])
@@ -2193,6 +2377,399 @@ function galleryImage(item) {
       <text x="42" y="86" fill="#fff8e8" font-size="42" font-family="serif">${escapeSvg(item.title)}</text>
     </svg>`;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function renderDirectory() {
+  const root = el("div");
+  const actions = isAdmin
+    ? actionRow([
+        button("Новый NPC", "primary-button", () => addNpc()),
+        button("Новая фракция", "ghost-button", () => addFaction()),
+      ])
+    : null;
+  root.append(header("NPC и фракции", "Рабочая база персонажей мира, организаций, отношений и связей с заданиями.", actions));
+
+  const tabs = el("div", "directory-tabs");
+  [
+    ["npcs", `NPC (${visibleNpcs().length})`],
+    ["factions", `Фракции (${visibleFactions().length})`],
+  ].forEach(([tab, label]) => {
+    tabs.append(button(label, `tab-button ${activeDirectoryTab === tab ? "active" : ""}`, () => {
+      activeDirectoryTab = tab;
+      render();
+    }));
+  });
+  root.append(tabs);
+  root.append(activeDirectoryTab === "factions" ? renderFactionDirectory() : renderNpcDirectory());
+  return root;
+}
+
+function renderNpcDirectory() {
+  const grid = el("div", "directory-grid");
+  const items = filterItems(visibleNpcs(), (npc) =>
+    [npc.name, npc.role, npc.ancestry, npc.location, npc.tags.join(" "), factionById(npc.factionId)?.name ?? ""].join(" ")
+  );
+  items.forEach((npc) => grid.append(npcCard(npc)));
+  return grid.children.length ? grid : el("div", "empty-state", "NPC не найдены");
+}
+
+function renderFactionDirectory() {
+  const grid = el("div", "directory-grid");
+  const items = filterItems(visibleFactions(), (faction) =>
+    [faction.name, faction.type, faction.leader, faction.headquarters, faction.tags.join(" "), faction.description].join(" ")
+  );
+  items.forEach((faction) => grid.append(factionCard(faction)));
+  return grid.children.length ? grid : el("div", "empty-state", "Фракции не найдены");
+}
+
+function npcCard(npc) {
+  const card = el("article", `directory-card relation-${relationTone(npc.relation)}`);
+  const head = el("div", "directory-card-head");
+  head.append(directoryPortrait(npc.portrait, npc.name), directoryTitleBlock(
+    npc.name,
+    [optionLabel(npcTypes, npc.type), npc.role, factionById(npc.factionId)?.name].filter(Boolean),
+    [relationText(npc.relation), optionLabel(npcStatuses, npc.status), npc.public ? "игрокам" : "скрыто"]
+  ));
+  card.append(head);
+  card.append(tags(npc.tags));
+  card.append(el("p", "directory-description", npc.description || "Описание пока не заполнено."));
+  card.append(directoryMeta([
+    ["Раса/народ", npc.ancestry],
+    ["Локация", npc.location],
+    ["Последняя встреча", npc.lastSeen],
+  ]));
+  card.append(directoryLinks([
+    ...linkedWikiByIds(npc.wikiLinks).map((article) => [`Wiki: ${article.title}`, () => openWikiArticle(article.id)]),
+    ...linkedQuestsByIds(npc.questLinks).map((quest) => [`Задание: ${quest.title}`, () => openQuest(quest.id)]),
+    ...(npc.factionId && factionById(npc.factionId) ? [[`Фракция: ${factionById(npc.factionId).name}`, () => openFaction(npc.factionId)]] : []),
+  ]));
+  if (isAdmin && npc.gmNotes) card.append(el("p", "gm-inline", `GM: ${npc.gmNotes}`));
+  if (isAdmin) card.append(inlineEditor("Редактировать NPC", npcEditor(npc)));
+  return card;
+}
+
+function factionCard(faction) {
+  const card = el("article", `directory-card relation-${relationTone(faction.relation)}`);
+  const head = el("div", "directory-card-head");
+  head.append(directoryPortrait(faction.image, faction.name), directoryTitleBlock(
+    faction.name,
+    [optionLabel(factionTypes, faction.type), `Влияние: ${optionLabel(influenceLevels, faction.influence)}`],
+    [relationText(faction.relation), faction.public ? "игрокам" : "скрыто"]
+  ));
+  card.append(head);
+  card.append(tags(faction.tags));
+  card.append(el("p", "directory-description", faction.description || "Описание пока не заполнено."));
+  card.append(directoryMeta([
+    ["Лидер", faction.leader],
+    ["Штаб/территория", faction.headquarters],
+    ["Цели", faction.goals],
+    ["Ресурсы", faction.resources],
+  ]));
+  const memberNpcs = visibleNpcs().filter((npc) => npc.factionId === faction.id || faction.npcLinks.includes(npc.id));
+  card.append(directoryLinks([
+    ...memberNpcs.map((npc) => [`NPC: ${npc.name}`, () => openNpc(npc.id)]),
+    ...linkedWikiByIds(faction.wikiLinks).map((article) => [`Wiki: ${article.title}`, () => openWikiArticle(article.id)]),
+    ...linkedQuestsByIds(faction.questLinks).map((quest) => [`Задание: ${quest.title}`, () => openQuest(quest.id)]),
+  ]));
+  if (isAdmin && faction.gmNotes) card.append(el("p", "gm-inline", `GM: ${faction.gmNotes}`));
+  if (isAdmin) card.append(inlineEditor("Редактировать фракцию", factionEditor(faction)));
+  return card;
+}
+
+function directoryPortrait(src, name) {
+  const frame = el("div", "directory-portrait");
+  if (src) {
+    const img = document.createElement("img");
+    img.src = src;
+    img.alt = name;
+    frame.append(img);
+  } else {
+    frame.append(el("span", "", initials(name)));
+  }
+  return frame;
+}
+
+function directoryTitleBlock(title, subtitles, badges) {
+  const block = el("div", "directory-title");
+  block.append(el("h3", "", title), el("p", "", subtitles.filter(Boolean).join(" · ") || "Без роли"));
+  block.append(compactBadges(badges));
+  return block;
+}
+
+function directoryMeta(rows) {
+  const meta = el("div", "directory-meta");
+  rows.filter(([, value]) => value).forEach(([label, value]) => {
+    const item = el("div", "directory-meta-item");
+    item.append(el("span", "", label), el("strong", "", value));
+    meta.append(item);
+  });
+  return meta;
+}
+
+function directoryLinks(entries) {
+  const box = el("div", "map-link-list");
+  entries.forEach(([label, handler]) => box.append(button(label, "map-link-button", handler)));
+  return box.children.length ? box : el("p", "muted", "Связей пока нет");
+}
+
+function inlineEditor(title, content) {
+  const details = el("details", "inline-editor");
+  details.append(el("summary", "", title), content);
+  return details;
+}
+
+function npcEditor(npc) {
+  const form = el("form", "form-grid");
+  const fields = {
+    name: input(npc.name),
+    type: selectInput(npcTypes, npc.type),
+    ancestry: input(npc.ancestry),
+    role: input(npc.role),
+    factionId: selectInput([["", "Без фракции"], ...state.factions.map((faction) => [faction.id, faction.name])], npc.factionId),
+    location: input(npc.location),
+    relation: input(npc.relation),
+    status: selectInput(npcStatuses, npc.status),
+    lastSeen: input(npc.lastSeen),
+    tags: input(npc.tags.join(", ")),
+    description: textarea(npc.description),
+    gmNotes: textarea(npc.gmNotes),
+    public: document.createElement("input"),
+    wikiLinks: checkboxList(visibleWiki().map((article) => [article.id, article.title]), npc.wikiLinks),
+    questLinks: checkboxList(visibleQuests().map((quest) => [quest.id, quest.title]), npc.questLinks),
+  };
+  fields.public.type = "checkbox";
+  fields.public.checked = npc.public;
+  const portraitInput = document.createElement("input");
+  portraitInput.type = "file";
+  portraitInput.accept = "image/png,image/jpeg,image/webp,image/gif";
+  portraitInput.addEventListener("change", async () => {
+    const file = portraitInput.files?.[0];
+    if (!file) return;
+    npc.portrait = await imageFileToUrl(file, "npcs");
+    saveState();
+    render();
+  });
+  form.append(
+    labelWrap("Имя", fields.name),
+    labelWrap("Тип", fields.type),
+    labelWrap("Раса/народ", fields.ancestry),
+    labelWrap("Роль", fields.role),
+    labelWrap("Фракция", fields.factionId),
+    labelWrap("Локация", fields.location),
+    labelWrap("Отношение -5..5", fields.relation),
+    labelWrap("Статус", fields.status),
+    labelWrap("Последняя встреча", fields.lastSeen),
+    checkboxWrap("Видно игрокам", fields.public),
+    labelWrap("Теги", fields.tags, "span-2"),
+    labelWrap("Портрет", portraitInput, "span-2"),
+    labelWrap("Описание", fields.description, "span-2"),
+    labelWrap("GM-заметки", fields.gmNotes, "span-2"),
+    labelWrap("Связанные Wiki", fields.wikiLinks, "span-2"),
+    labelWrap("Связанные задания", fields.questLinks, "span-2"),
+    actionRow([
+      button("Сохранить NPC", "primary-button", null, "submit"),
+      button("Удалить NPC", "ghost-button", () => deleteNpc(npc)),
+    ], "span-2")
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    Object.assign(npc, normalizeNpc({
+      ...npc,
+      name: fields.name.value,
+      type: fields.type.value,
+      ancestry: fields.ancestry.value,
+      role: fields.role.value,
+      factionId: fields.factionId.value,
+      location: fields.location.value,
+      relation: Number(fields.relation.value || 0),
+      status: fields.status.value,
+      lastSeen: fields.lastSeen.value,
+      public: fields.public.checked,
+      tags: csv(fields.tags.value),
+      description: fields.description.value,
+      gmNotes: fields.gmNotes.value,
+      wikiLinks: checkedValues(fields.wikiLinks),
+      questLinks: checkedValues(fields.questLinks),
+    }));
+    saveState();
+    render();
+  });
+  return form;
+}
+
+function factionEditor(faction) {
+  const form = el("form", "form-grid");
+  const fields = {
+    name: input(faction.name),
+    type: selectInput(factionTypes, faction.type),
+    leader: input(faction.leader),
+    headquarters: input(faction.headquarters),
+    relation: input(faction.relation),
+    influence: selectInput(influenceLevels, faction.influence),
+    tags: input(faction.tags.join(", ")),
+    description: textarea(faction.description),
+    goals: textarea(faction.goals),
+    resources: textarea(faction.resources),
+    gmNotes: textarea(faction.gmNotes),
+    public: document.createElement("input"),
+    wikiLinks: checkboxList(visibleWiki().map((article) => [article.id, article.title]), faction.wikiLinks),
+    questLinks: checkboxList(visibleQuests().map((quest) => [quest.id, quest.title]), faction.questLinks),
+    npcLinks: checkboxList(state.npcs.map((npc) => [npc.id, npc.name]), faction.npcLinks),
+    allies: checkboxList(state.factions.filter((item) => item.id !== faction.id).map((item) => [item.id, item.name]), faction.allies),
+    enemies: checkboxList(state.factions.filter((item) => item.id !== faction.id).map((item) => [item.id, item.name]), faction.enemies),
+  };
+  fields.public.type = "checkbox";
+  fields.public.checked = faction.public;
+  const imageInput = document.createElement("input");
+  imageInput.type = "file";
+  imageInput.accept = "image/png,image/jpeg,image/webp,image/gif";
+  imageInput.addEventListener("change", async () => {
+    const file = imageInput.files?.[0];
+    if (!file) return;
+    faction.image = await imageFileToUrl(file, "factions");
+    saveState();
+    render();
+  });
+  form.append(
+    labelWrap("Название", fields.name),
+    labelWrap("Тип", fields.type),
+    labelWrap("Лидер", fields.leader),
+    labelWrap("Штаб/территория", fields.headquarters),
+    labelWrap("Отношение -5..5", fields.relation),
+    labelWrap("Влияние", fields.influence),
+    checkboxWrap("Видно игрокам", fields.public),
+    labelWrap("Теги", fields.tags),
+    labelWrap("Эмблема/картинка", imageInput, "span-2"),
+    labelWrap("Описание", fields.description, "span-2"),
+    labelWrap("Цели", fields.goals, "span-2"),
+    labelWrap("Ресурсы", fields.resources, "span-2"),
+    labelWrap("GM-заметки", fields.gmNotes, "span-2"),
+    labelWrap("Связанные NPC", fields.npcLinks, "span-2"),
+    labelWrap("Союзники", fields.allies, "span-2"),
+    labelWrap("Враги", fields.enemies, "span-2"),
+    labelWrap("Связанные Wiki", fields.wikiLinks, "span-2"),
+    labelWrap("Связанные задания", fields.questLinks, "span-2"),
+    actionRow([
+      button("Сохранить фракцию", "primary-button", null, "submit"),
+      button("Удалить фракцию", "ghost-button", () => deleteFaction(faction)),
+    ], "span-2")
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    Object.assign(faction, normalizeFaction({
+      ...faction,
+      name: fields.name.value,
+      type: fields.type.value,
+      leader: fields.leader.value,
+      headquarters: fields.headquarters.value,
+      relation: Number(fields.relation.value || 0),
+      influence: fields.influence.value,
+      public: fields.public.checked,
+      tags: csv(fields.tags.value),
+      description: fields.description.value,
+      goals: fields.goals.value,
+      resources: fields.resources.value,
+      gmNotes: fields.gmNotes.value,
+      npcLinks: checkedValues(fields.npcLinks),
+      allies: checkedValues(fields.allies),
+      enemies: checkedValues(fields.enemies),
+      wikiLinks: checkedValues(fields.wikiLinks),
+      questLinks: checkedValues(fields.questLinks),
+    }));
+    saveState();
+    render();
+  });
+  return form;
+}
+
+function addNpc() {
+  if (!isAdmin) return;
+  const npc = normalizeNpc({ id: slug("npc"), name: "Новый NPC", public: false, tags: ["новое"] });
+  state.npcs.unshift(npc);
+  activeDirectoryTab = "npcs";
+  saveState();
+  render();
+}
+
+function addFaction() {
+  if (!isAdmin) return;
+  const faction = normalizeFaction({ id: slug("faction"), name: "Новая фракция", public: false, tags: ["новое"] });
+  state.factions.unshift(faction);
+  activeDirectoryTab = "factions";
+  saveState();
+  render();
+}
+
+function deleteNpc(npc) {
+  if (!confirm(`Удалить NPC "${npc.name}"?`)) return;
+  state.npcs = state.npcs.filter((item) => item.id !== npc.id);
+  state.factions.forEach((faction) => {
+    faction.npcLinks = faction.npcLinks.filter((id) => id !== npc.id);
+  });
+  saveState();
+  render();
+}
+
+function deleteFaction(faction) {
+  if (!confirm(`Удалить фракцию "${faction.name}"? NPC останутся, но потеряют привязку к ней.`)) return;
+  state.factions = state.factions.filter((item) => item.id !== faction.id);
+  state.npcs.forEach((npc) => {
+    if (npc.factionId === faction.id) npc.factionId = "";
+  });
+  saveState();
+  render();
+}
+
+function factionById(id) {
+  return state.factions.find((faction) => faction.id === id);
+}
+
+function npcById(id) {
+  return state.npcs.find((npc) => npc.id === id);
+}
+
+function linkedWikiByIds(ids) {
+  const visibleIds = new Set(visibleWiki().map((article) => article.id));
+  return (ids ?? []).map((id) => wikiById(id)).filter((article) => article && visibleIds.has(article.id));
+}
+
+function linkedQuestsByIds(ids) {
+  const visibleIds = new Set(visibleQuests().map((quest) => quest.id));
+  return (ids ?? []).map((id) => state.quests.find((quest) => quest.id === id)).filter((quest) => quest && visibleIds.has(quest.id));
+}
+
+function openNpc(npcId) {
+  const npc = npcById(npcId);
+  activeDirectoryTab = "npcs";
+  searchTerm = npc?.name ?? "";
+  if (globalSearch) globalSearch.value = searchTerm;
+  setView("directory");
+}
+
+function openFaction(factionId) {
+  const faction = factionById(factionId);
+  activeDirectoryTab = "factions";
+  searchTerm = faction?.name ?? "";
+  if (globalSearch) globalSearch.value = searchTerm;
+  setView("directory");
+}
+
+function optionLabel(options, value) {
+  return options.find(([id]) => id === value)?.[1] ?? value ?? "";
+}
+
+function relationTone(value) {
+  const relation = Number(value || 0);
+  if (relation <= -3) return "bad";
+  if (relation >= 3) return "good";
+  if (relation > 0) return "warm";
+  if (relation < 0) return "cold";
+  return "neutral";
+}
+
+function relationText(value) {
+  const relation = Number(value || 0);
+  return `отношение ${relation > 0 ? "+" : ""}${relation}`;
 }
 
 function allGalleryTags() {
