@@ -122,6 +122,17 @@ const terrainTileFiles = {
   подземелье: "assets/hex-terrain/temple destroyed.png",
 };
 
+const mapTypes = [
+  ["Регион", "Регион"],
+  ["Мир", "Мир"],
+  ["Поселение", "Поселение"],
+  ["Город", "Город"],
+  ["Здание", "Здание"],
+  ["Подземелье", "Подземелье"],
+  ["Боевая карта", "Боевая карта"],
+  ["Другое", "Другое"],
+];
+
 const seedData = {
   meta: {
     campaignName: "Герои Асханы",
@@ -340,6 +351,9 @@ const seedData = {
       {
         id: "mezhi-canvas",
         title: "Межи: общая карта",
+        type: "Регион",
+        description: "Рабочее гекс-полотно Межей для путешествий, разведки и точек интереса.",
+        public: true,
         image: "",
         mode: "canvas",
         grid: { cols: 24, rows: 16, hexSize: 96, offsetX: 24, offsetY: 24 },
@@ -443,9 +457,11 @@ function normalizeState(raw) {
     ...seedData.map,
     ...(raw.map ?? {}),
   };
-  const savedCanvas = raw.map?.regions?.find((region) => region.id === "mezhi-canvas");
-  normalized.map.regions = normalizeMapRegions([savedCanvas ?? seedData.map.regions[0]]);
-  normalized.map.activeRegionId = "mezhi-canvas";
+  normalized.map.regions = normalizeMapRegions(raw.map?.regions?.length ? raw.map.regions : seedData.map.regions);
+  if (!normalized.map.regions.length) normalized.map.regions = normalizeMapRegions(seedData.map.regions);
+  if (!normalized.map.regions.some((region) => region.id === normalized.map.activeRegionId)) {
+    normalized.map.activeRegionId = normalized.map.regions[0]?.id ?? "mezhi-canvas";
+  }
   normalized.map.selectedHex = raw.map?.selectedHex ?? seedData.map.selectedHex ?? "0,0";
   normalized.rolls = raw.rolls ?? [];
   return normalized;
@@ -455,6 +471,9 @@ function normalizeMapRegions(regions) {
   return regions.map((region) => ({
     id: region.id || slug(region.title || "region"),
     title: region.title || "Регион",
+    type: region.type || "Регион",
+    description: region.description || "",
+    public: region.public ?? true,
     image: region.image || "",
     mode: region.mode || "canvas",
     grid: { cols: 24, rows: 14, hexSize: 92, offsetX: 0, offsetY: 0, ...(region.grid ?? {}) },
@@ -1276,13 +1295,68 @@ function wikiCategoryTitle(id) {
   return wikiCategories.find((category) => category.id === id)?.title ?? "Места";
 }
 
+function visibleMapRegions() {
+  return state.map.regions.filter((region) => region.public || isAdmin);
+}
+
+function ensureActiveMapRegion() {
+  const visibleRegions = visibleMapRegions();
+  if (!visibleRegions.length) return null;
+  if (!visibleRegions.some((region) => region.id === state.map.activeRegionId)) {
+    state.map.activeRegionId = visibleRegions[0].id;
+    state.map.selectedHex = "0,0";
+  }
+  return visibleRegions.find((region) => region.id === state.map.activeRegionId) ?? visibleRegions[0];
+}
+
+function selectMapRegion(regionId) {
+  const region = visibleMapRegions().find((item) => item.id === regionId);
+  if (!region) return;
+  state.map.activeRegionId = region.id;
+  state.map.selectedHex = "0,0";
+  mapScroll = { left: 0, top: 0 };
+  saveState();
+  render();
+}
+
+function createMapRegion() {
+  if (!isAdmin) return;
+  const title = prompt("Название новой карты/слоя атласа", "Новая карта");
+  if (title === null) return;
+  const region = normalizeMapRegions([
+    {
+      id: slug(title || "map"),
+      title: title.trim() || "Новая карта",
+      type: "Регион",
+      description: "Новая карта атласа. Заполни описание и гексы в режиме мастера.",
+      public: false,
+      image: "",
+      mode: "canvas",
+      grid: { cols: 18, rows: 12, hexSize: 92, offsetX: 24, offsetY: 24 },
+      hexes: {},
+    },
+  ])[0];
+  state.map.regions.unshift(region);
+  state.map.activeRegionId = region.id;
+  state.map.selectedHex = "0,0";
+  mapScroll = { left: 0, top: 0 };
+  saveState();
+  render();
+}
+
 function renderMap() {
   const root = el("div");
-  root.append(header("Карта", "Общая гексовая карта Межей: местность, объекты на гексах, заметки игроков и мастера."));
+  const action = isAdmin ? button("Новая карта", "primary-button", () => createMapRegion()) : null;
+  root.append(header("Карта", "Атлас кампании: общая карта, поселения, подземелья и скрытые мастерские слои.", action));
 
-  const region = activeMapRegion();
+  const region = ensureActiveMapRegion();
+  if (!region) {
+    root.append(el("div", "empty-state", "Публичных карт пока нет."));
+    return root;
+  }
   const selected = getHex(region, state.map.selectedHex);
   const layout = el("div", "map-layout");
+  const atlas = mapAtlasPanel(region);
   const stage = el("section", "hex-map-stage");
   stage.addEventListener("scroll", () => {
     mapScroll = { left: stage.scrollLeft, top: stage.scrollTop };
@@ -1300,10 +1374,36 @@ function renderMap() {
 
   const panel = mapInspector(region, selected);
 
-  layout.append(stage, panel);
+  layout.append(atlas, stage, panel);
   root.append(layout);
   restoreMapScroll(stage);
   return root;
+}
+
+function mapAtlasPanel(activeRegion) {
+  const panel = el("aside", "panel map-atlas-panel");
+  panel.append(
+    el("p", "eyebrow", "Атлас"),
+    el("h3", "", "Карты кампании"),
+    el("p", "muted", isAdmin ? "Мастер видит все карты и может скрывать черновики от игроков." : "Показаны только открытые игрокам карты.")
+  );
+
+  const list = el("div", "map-atlas-list");
+  visibleMapRegions().forEach((region) => {
+    const item = button("", `map-atlas-card ${region.id === activeRegion.id ? "active" : ""}`, () => selectMapRegion(region.id));
+    item.append(
+      el("span", "map-atlas-type", region.type || "Регион"),
+      el("strong", "", region.title),
+      el("span", "map-atlas-description", region.description || "Без описания"),
+      compactBadges([region.public ? "игрокам" : "скрыто", `${region.grid.cols}x${region.grid.rows}`])
+    );
+    list.append(item);
+  });
+  panel.append(list);
+  if (isAdmin) {
+    panel.append(actionRow([button("Добавить карту", "primary-button", () => createMapRegion())]));
+  }
+  return panel;
 }
 
 function mapInspector(region, selected) {
@@ -1375,7 +1475,7 @@ function setMapZoom(value) {
 }
 
 function activeMapRegion() {
-  return state.map.regions.find((region) => region.id === state.map.activeRegionId) ?? state.map.regions[0];
+  return ensureActiveMapRegion() ?? state.map.regions[0];
 }
 
 function getHex(region, key) {
@@ -1540,9 +1640,30 @@ function hexEditor(region, key, data) {
   return form;
 }
 
+function deleteMapRegion(region) {
+  if (!isAdmin) return;
+  if (state.map.regions.length <= 1) {
+    alert("Нельзя удалить последнюю карту атласа.");
+    return;
+  }
+  if (!confirm(`Удалить карту "${region.title}"? Это удалит все гексы и заметки этой карты.`)) return;
+  state.map.regions = state.map.regions.filter((item) => item.id !== region.id);
+  const nextRegion = visibleMapRegions()[0] ?? state.map.regions[0];
+  state.map.activeRegionId = nextRegion?.id ?? "";
+  state.map.selectedHex = "0,0";
+  mapScroll = { left: 0, top: 0 };
+  saveState();
+  render();
+}
+
 function regionEditor(region) {
   const form = el("form", "inspector-form compact");
   const title = input(region.title);
+  const type = selectInput(mapTypes, region.type || "Регион");
+  const description = textarea(region.description || "");
+  const isPublic = document.createElement("input");
+  isPublic.type = "checkbox";
+  isPublic.checked = region.public;
   const cols = input(region.grid.cols);
   const rows = input(region.grid.rows);
   const hexSize = input(region.grid.hexSize);
@@ -1560,12 +1681,15 @@ function regionEditor(region) {
   });
   form.append(
     labelWrap("Название карты", title),
+    labelWrap("Тип карты", type),
+    checkboxWrap("Видно игрокам", isPublic),
+    labelWrap("Описание в атласе", description, "span-2"),
     labelWrap("Колонки", cols),
     labelWrap("Ряды", rows),
     labelWrap("Размер гекса", hexSize),
     labelWrap("Сдвиг X", offsetX),
     labelWrap("Сдвиг Y", offsetY),
-    labelWrap("Фоновая подложка", imageInput),
+    labelWrap("Фоновая подложка", imageInput, "span-2"),
     actionRow([
       button("Сохранить карту", "primary-button", null, "submit"),
       button("Очистить фон", "ghost-button", () => {
@@ -1573,11 +1697,15 @@ function regionEditor(region) {
         saveState();
         render();
       }),
+      button("Удалить карту", "ghost-button", () => deleteMapRegion(region)),
     ])
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     region.title = title.value;
+    region.type = type.value;
+    region.description = description.value;
+    region.public = isPublic.checked;
     region.grid = {
       cols: Number(cols.value),
       rows: Number(rows.value),

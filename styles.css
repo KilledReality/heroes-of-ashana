@@ -422,7 +422,7 @@ textarea:focus {
 }
 
 .map-layout {
-  grid-template-columns: minmax(720px, 1fr) 380px;
+  grid-template-columns: 280px minmax(620px, 1fr) 380px;
   align-items: stretch;
 }
 
@@ -836,6 +836,67 @@ label {
   color: var(--paper-strong);
 }
 
+.map-atlas-panel {
+  align-self: stretch;
+  max-height: min(84vh, 900px);
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.map-atlas-panel h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.map-atlas-panel .muted {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.map-atlas-list {
+  display: grid;
+  gap: 8px;
+}
+
+.map-atlas-card {
+  width: 100%;
+  min-height: 0;
+  padding: 12px;
+  display: grid;
+  gap: 7px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.map-atlas-card:hover,
+.map-atlas-card.active {
+  border-color: rgba(212, 167, 79, 0.52);
+  background: rgba(212, 167, 79, 0.11);
+}
+
+.map-atlas-type {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.map-atlas-card strong {
+  line-height: 1.25;
+}
+
+.map-atlas-description {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
 .map-inspector {
   align-self: stretch;
   max-height: min(84vh, 900px);
@@ -932,7 +993,8 @@ label {
 
 .inspector-form.compact label:first-child,
 .inspector-form.compact .button-row,
-.inspector-form.compact label:last-of-type {
+.inspector-form.compact label:last-of-type,
+.inspector-form .span-2 {
   grid-column: 1 / -1;
 }
 
