@@ -2369,7 +2369,7 @@ function attachTagTooltip(target, tagName) {
 
 function scheduleTagTooltip(tagName, anchor) {
   hideTagTooltip();
-  tagTooltipTimer = setTimeout(() => showTagTooltip(tagName, anchor), 1500);
+  tagTooltipTimer = setTimeout(() => showTagTooltip(tagName, anchor), 700);
 }
 
 function showTagTooltip(tagName, anchor) {
