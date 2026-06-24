@@ -4513,11 +4513,17 @@ function showRollPopup(log) {
   const old = document.querySelector(".roll-popup");
   if (old) old.remove();
   const popup = el("div", "roll-popup");
-  const diceStage = el("div", "roll-animation-stage");
-  const dice = el("div", "roll-die rolling", "?");
-  const finalFace = log.rolls.length === 1 ? log.rolls[0] : log.total;
-  const sides = Number(log.formula.match(/d(\d+)/i)?.[1] || Math.max(...log.rolls, 20));
-  diceStage.append(dice);
+  const parsed = parseRoll(log.formula) ?? { sides: Math.max(...log.rolls, 20), modifier: 0 };
+  const diceStage = el("div", `roll-animation-stage ${log.rolls.length > 1 ? "multi" : ""}`);
+  const visibleRolls = log.rolls.slice(0, 8);
+  visibleRolls.forEach((rollValue, index) => {
+    const die = createRollDie(parsed.sides);
+    diceStage.append(die);
+    animateRollDie(die, rollValue, parsed.sides, index * 90);
+  });
+  if (log.rolls.length > visibleRolls.length) {
+    diceStage.append(el("div", "roll-extra-dice", `+${log.rolls.length - visibleRolls.length}`));
+  }
   popup.append(
     el("p", "eyebrow", log.actor),
     el("h3", "", log.label || "Бросок"),
@@ -4528,21 +4534,44 @@ function showRollPopup(log) {
   const close = button("Закрыть", "small-button", () => popup.remove());
   popup.append(close);
   document.body.append(popup);
-  animateRollDie(dice, finalFace, sides);
   setTimeout(() => popup.remove(), 5200);
 }
 
-function animateRollDie(dice, finalFace, sides) {
-  const startedAt = Date.now();
-  const duration = 900;
-  const tick = setInterval(() => {
-    dice.textContent = 1 + Math.floor(Math.random() * Math.max(2, sides));
-    if (Date.now() - startedAt < duration) return;
-    clearInterval(tick);
-    dice.textContent = finalFace;
-    dice.classList.remove("rolling");
-    dice.classList.add("landed");
-  }, 60);
+function createRollDie(sides) {
+  const visual = diceVisualClass(sides);
+  const die = el("div", `roll-die ${visual}`);
+  die.append(el("span", "roll-die-face", "?"), el("small", "roll-die-type", `d${sides}`));
+  return die;
+}
+
+function diceVisualClass(sides) {
+  if ([4, 6, 8, 10, 12, 20, 100].includes(Number(sides))) return `die-d${sides}`;
+  return "die-poly";
+}
+
+function animateRollDie(die, finalFace, sides, delay = 0) {
+  const face = die.querySelector(".roll-die-face");
+  const safeSides = Math.max(2, Number(sides || 20));
+  setTimeout(() => {
+    die.classList.add("rolling");
+    const startedAt = performance.now();
+    const duration = 980;
+    let lastFaceChange = 0;
+    const step = (now) => {
+      if (now - lastFaceChange > 74) {
+        face.textContent = 1 + Math.floor(Math.random() * safeSides);
+        lastFaceChange = now;
+      }
+      if (now - startedAt < duration) {
+        requestAnimationFrame(step);
+        return;
+      }
+      face.textContent = finalFace;
+      die.classList.remove("rolling");
+      die.classList.add("landed");
+    };
+    requestAnimationFrame(step);
+  }, delay);
 }
 
 function parseRoll(input) {
