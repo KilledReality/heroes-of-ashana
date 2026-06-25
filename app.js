@@ -2,6 +2,7 @@ const STORAGE_KEY = "ashana-campaign-v1";
 const UI_STORAGE_KEY = "ashana-ui-v1";
 const MINIGAME_STORAGE_KEY = "ashana-minigame-v1";
 const DEFENSE_STORAGE_KEY = "ashana-defense-mirinka-v2";
+const SNAKE_STORAGE_KEY = "ashana-snake-caravan-v1";
 const WIKI_INDEX_ID = "__wiki_index";
 const SUPABASE_URL = "https://msthqpeisopneallhkpk.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Qp0Z8J0uymysKz7KJRYUdA__74_rnbj";
@@ -6079,6 +6080,7 @@ function renderMinigame() {
   [
     ["heretic", "Побег еретика", "Собери реликвии и не дай инквизитору тебя догнать."],
     ["mirinka", "Оборона Миринки", "Выдержи ночной налет, распределяя защитников по дорогам поселения."],
+    ["caravan", "Караван реликвария", "Проведи цепь паломников за припасами и не врежься в частокол."],
   ].forEach(([id, title, description]) => {
     const card = button("", `minigame-card ${activeMinigameId === id ? "active" : ""}`, () => {
       if (activeMinigameId === id) return;
@@ -6091,7 +6093,12 @@ function renderMinigame() {
   });
   root.append(selector);
 
-  root.append(activeMinigameId === "mirinka" ? renderMirinkaDefense() : renderHereticMinigame());
+  const minigameRenderers = {
+    heretic: renderHereticMinigame,
+    mirinka: renderMirinkaDefense,
+    caravan: renderCaravanSnake,
+  };
+  root.append((minigameRenderers[activeMinigameId] || renderHereticMinigame)());
   return root;
 }
 
@@ -6236,6 +6243,73 @@ function defenseMainButtonText(game) {
   return "Пауза";
 }
 
+function renderCaravanSnake() {
+  const root = el("div");
+  const shell = el("section", "panel minigame-panel");
+  const top = el("div", "minigame-top");
+  const score = el("div", "minigame-stat");
+  const status = el("div", "minigame-status", "WASD / стрелки - поворот каравана. Esc - пауза.");
+  let gameControl = null;
+  const mainButton = button("Начать путь", "primary-button", () => {
+    if (!gameControl) return;
+    if (gameControl.isGameOver()) {
+      gameControl.restart();
+      return;
+    }
+    if (!gameControl.isStarted()) {
+      gameControl.start();
+      return;
+    }
+    if (gameControl.isPaused()) {
+      gameControl.resume();
+      return;
+    }
+    gameControl.pause("Пауза. Караван ждет нового приказа.");
+  });
+  top.append(score, status, mainButton);
+
+  const canvasWrap = el("div", "minigame-canvas-wrap");
+  const canvas = document.createElement("canvas");
+  canvas.width = 820;
+  canvas.height = 420;
+  canvas.setAttribute("aria-label", "Мини-игра Караван реликвария");
+  canvasWrap.append(canvas);
+
+  const controls = el("div", "minigame-controls");
+  [
+    ["up", "↑"],
+    ["left", "←"],
+    ["right", "→"],
+    ["down", "↓"],
+  ].forEach(([key, label]) => {
+    const control = button(label, "small-button minigame-control", () => gameControl?.turn(key));
+    controls.append(control);
+  });
+
+  const help = el("div", "minigame-help");
+  [
+    ["WASD", "поворот"],
+    ["↑ ↓ ← →", "поворот"],
+    ["Припасы", "+очки и длина"],
+    ["Частокол", "смертельно"],
+    ["Esc", "пауза / продолжить"],
+  ].forEach(([key, label]) => {
+    const item = el("span", "minigame-help-item");
+    item.append(el("kbd", "", key), document.createTextNode(label));
+    help.append(item);
+  });
+
+  shell.append(top, canvasWrap, controls, help);
+  root.append(shell);
+  gameControl = startCaravanSnake(canvas, score, status, {
+    onStateChange: (game) => {
+      mainButton.textContent = game.gameOver ? "Начать заново" : !game.started ? "Начать путь" : game.paused ? "Продолжить" : "Пауза";
+    },
+  });
+  activeMinigameCleanup = gameControl.cleanup;
+  return root;
+}
+
 const minigameTouchKeys = new Set();
 
 function minigameKeyAction(event) {
@@ -6271,6 +6345,545 @@ function minigameKeyAction(event) {
     escape: "pause",
     esc: "pause",
   }[key] || "";
+}
+
+function startCaravanSnake(canvas, scoreNode, statusNode, options = {}) {
+  const ctx = canvas.getContext("2d");
+  const world = { w: canvas.width, h: canvas.height };
+  const board = caravanBoard(world);
+  let game = restoreCaravanSnake(board);
+  let notifiedState = "";
+
+  const notify = () => {
+    const signature = `${game.started}-${game.paused}-${game.gameOver}-${game.score}-${game.relics}`;
+    if (signature === notifiedState) return;
+    notifiedState = signature;
+    options.onStateChange?.(game);
+  };
+  const turn = (direction) => {
+    const next = caravanDirectionVector(direction);
+    if (!next || !game.started || game.paused || game.gameOver) return;
+    if (next.x === -game.direction.x && next.y === -game.direction.y) return;
+    game.nextDirection = next;
+  };
+  const pause = (message = "Пауза.") => {
+    if (!game.started || game.paused || game.gameOver) return;
+    game.paused = true;
+    game.running = false;
+    game.message = message;
+    saveCaravanSnake(game);
+    updateCaravanSnakeHud(scoreNode, statusNode, game);
+    notify();
+  };
+  const resume = () => {
+    if (!game.started || game.gameOver) return;
+    game.paused = false;
+    game.running = true;
+    game.last = performance.now();
+    game.message = "Караван снова идет по тракту.";
+    saveCaravanSnake(game);
+    updateCaravanSnakeHud(scoreNode, statusNode, game);
+    notify();
+  };
+  const togglePause = () => {
+    if (!game.started || game.gameOver) return;
+    if (game.paused) resume();
+    else pause("Пауза. Нажми Esc или «Продолжить», чтобы двинуть караван дальше.");
+  };
+  const keydown = (event) => {
+    const action = minigameKeyAction(event);
+    if (!action) return;
+    event.preventDefault();
+    if (action === "pause") {
+      if (!event.repeat) togglePause();
+      return;
+    }
+    if (["up", "down", "left", "right"].includes(action)) turn(action);
+  };
+  const pauseOnHidden = () => {
+    if (document.hidden) pause("Пауза: вкладка была свернута. Прогресс каравана сохранен.");
+  };
+  const pauseOnBlur = () => pause("Пауза: окно потеряло фокус. Караван стоит лагерем.");
+  window.addEventListener("keydown", keydown);
+  document.addEventListener("visibilitychange", pauseOnHidden);
+  window.addEventListener("blur", pauseOnBlur);
+
+  const loop = (now) => {
+    const dt = Math.min(0.05, (now - game.last) / 1000);
+    game.last = now;
+    updateCaravanSnake(game, board, dt);
+    drawCaravanSnake(ctx, game, board, world);
+    updateCaravanSnakeHud(scoreNode, statusNode, game);
+    notify();
+    game.frameId = requestAnimationFrame(loop);
+  };
+
+  updateCaravanSnakeHud(scoreNode, statusNode, game);
+  drawCaravanSnake(ctx, game, board, world);
+  notify();
+  game.frameId = requestAnimationFrame(loop);
+
+  return {
+    start: () => {
+      if (game.started && !game.gameOver) return;
+      game = createCaravanSnakeGame(board, true);
+      game.last = performance.now();
+      saveCaravanSnake(game);
+      updateCaravanSnakeHud(scoreNode, statusNode, game);
+      notify();
+    },
+    restart: () => {
+      game = createCaravanSnakeGame(board, true);
+      game.last = performance.now();
+      saveCaravanSnake(game);
+      updateCaravanSnakeHud(scoreNode, statusNode, game);
+      notify();
+    },
+    resume,
+    pause,
+    turn,
+    isStarted: () => game.started,
+    isPaused: () => game.paused,
+    isGameOver: () => game.gameOver,
+    cleanup: () => {
+      if (game.started && !game.gameOver) {
+        game.paused = true;
+        game.running = false;
+        game.message = "Пауза: прогресс каравана сохранен.";
+      }
+      saveCaravanSnake(game);
+      cancelAnimationFrame(game.frameId);
+      window.removeEventListener("keydown", keydown);
+      document.removeEventListener("visibilitychange", pauseOnHidden);
+      window.removeEventListener("blur", pauseOnBlur);
+    },
+  };
+}
+
+function caravanBoard(world) {
+  const cell = 24;
+  const cols = 31;
+  const rows = 15;
+  return {
+    cell,
+    cols,
+    rows,
+    x: Math.round((world.w - cols * cell) / 2),
+    y: Math.round((world.h - rows * cell) / 2),
+  };
+}
+
+function createCaravanSnakeGame(board, started = false) {
+  const obstacles = caravanBaseObstacles();
+  const game = {
+    started,
+    running: started,
+    paused: !started,
+    gameOver: false,
+    frameId: 0,
+    last: performance.now(),
+    time: 0,
+    tick: 0,
+    stepDelay: 0.24,
+    direction: { x: 1, y: 0 },
+    nextDirection: { x: 1, y: 0 },
+    segments: [
+      { x: 8, y: 7 },
+      { x: 7, y: 7 },
+      { x: 6, y: 7 },
+      { x: 5, y: 7 },
+    ],
+    obstacles,
+    food: null,
+    score: 0,
+    relics: 0,
+    message: started ? "Караван вышел на тракт. Собирай припасы и не бейся в частокол." : "Нажми «Начать путь», чтобы вывести караван.",
+  };
+  game.food = spawnCaravanFood(board, game);
+  return game;
+}
+
+function restoreCaravanSnake(board) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SNAKE_STORAGE_KEY) || "{}");
+    if (!saved?.started) return createCaravanSnakeGame(board, false);
+    const fallback = createCaravanSnakeGame(board, true);
+    return {
+      ...fallback,
+      ...saved,
+      running: false,
+      paused: !saved.gameOver,
+      gameOver: Boolean(saved.gameOver),
+      last: performance.now(),
+      frameId: 0,
+      direction: caravanValidVector(saved.direction) || fallback.direction,
+      nextDirection: caravanValidVector(saved.nextDirection) || caravanValidVector(saved.direction) || fallback.nextDirection,
+      segments: Array.isArray(saved.segments) && saved.segments.length ? saved.segments.map(caravanPoint) : fallback.segments,
+      obstacles: Array.isArray(saved.obstacles) && saved.obstacles.length ? saved.obstacles.map(caravanPoint) : fallback.obstacles,
+      food: saved.food ? { ...caravanPoint(saved.food), type: saved.food.type || "supplies" } : fallback.food,
+      message: saved.gameOver ? saved.message || "Караван разбит." : "Пауза: путь восстановлен. Нажми «Продолжить».",
+    };
+  } catch {
+    return createCaravanSnakeGame(board, false);
+  }
+}
+
+function saveCaravanSnake(game) {
+  try {
+    localStorage.setItem(SNAKE_STORAGE_KEY, JSON.stringify({
+      started: Boolean(game.started),
+      paused: Boolean(game.paused || !game.running),
+      running: false,
+      gameOver: Boolean(game.gameOver),
+      time: Number(game.time || 0),
+      tick: Number(game.tick || 0),
+      stepDelay: Number(game.stepDelay || 0.24),
+      direction: caravanPoint(game.direction),
+      nextDirection: caravanPoint(game.nextDirection),
+      segments: (game.segments ?? []).map(caravanPoint),
+      obstacles: (game.obstacles ?? []).map(caravanPoint),
+      food: game.food ? { ...caravanPoint(game.food), type: game.food.type || "supplies" } : null,
+      score: Number(game.score || 0),
+      relics: Number(game.relics || 0),
+      message: game.message || "",
+      savedAt: new Date().toISOString(),
+    }));
+  } catch (error) {
+    console.warn("Не удалось сохранить караван:", error.message);
+  }
+}
+
+function caravanPoint(point) {
+  return { x: Number(point?.x || 0), y: Number(point?.y || 0) };
+}
+
+function caravanValidVector(vector) {
+  const point = caravanPoint(vector);
+  return Math.abs(point.x) + Math.abs(point.y) === 1 ? point : null;
+}
+
+function caravanBaseObstacles() {
+  return [
+    { x: 4, y: 3 }, { x: 5, y: 3 }, { x: 6, y: 3 },
+    { x: 18, y: 3 }, { x: 19, y: 3 }, { x: 20, y: 3 },
+    { x: 12, y: 6 }, { x: 13, y: 6 }, { x: 14, y: 6 },
+    { x: 3, y: 11 }, { x: 4, y: 11 },
+    { x: 21, y: 10 }, { x: 22, y: 10 }, { x: 23, y: 10 },
+  ];
+}
+
+function caravanDirectionVector(direction) {
+  return {
+    up: { x: 0, y: -1 },
+    down: { x: 0, y: 1 },
+    left: { x: -1, y: 0 },
+    right: { x: 1, y: 0 },
+  }[direction] || null;
+}
+
+function updateCaravanSnake(game, board, dt) {
+  game.time += dt;
+  if (!game.started || game.paused || game.gameOver || !game.running) return;
+  game.tick += dt;
+  while (game.tick >= game.stepDelay && !game.gameOver) {
+    game.tick -= game.stepDelay;
+    stepCaravanSnake(game, board);
+  }
+}
+
+function stepCaravanSnake(game, board) {
+  game.direction = game.nextDirection;
+  const head = game.segments[0];
+  const next = { x: head.x + game.direction.x, y: head.y + game.direction.y };
+  const eats = next.x === game.food.x && next.y === game.food.y;
+  const body = eats ? game.segments : game.segments.slice(0, -1);
+  if (
+    next.x < 0 ||
+    next.y < 0 ||
+    next.x >= board.cols ||
+    next.y >= board.rows ||
+    body.some((segment) => segment.x === next.x && segment.y === next.y) ||
+    game.obstacles.some((obstacle) => obstacle.x === next.x && obstacle.y === next.y)
+  ) {
+    game.running = false;
+    game.paused = false;
+    game.gameOver = true;
+    game.message = `Караван разбился. Итог: ${game.score} очков и ${game.relics} припасов.`;
+    saveCaravanSnake(game);
+    return;
+  }
+
+  game.segments.unshift(next);
+  if (eats) {
+    const relicBonus = game.food.type === "relic" ? 80 : game.food.type === "coin" ? 55 : 40;
+    game.relics += 1;
+    game.score += relicBonus + game.segments.length * 3;
+    game.stepDelay = Math.max(0.09, 0.24 - game.relics * 0.009);
+    if (game.relics % 5 === 0) addCaravanObstacle(game, board);
+    game.food = spawnCaravanFood(board, game);
+    game.message = game.relics % 5 === 0 ? "Дорога стала опаснее: на тракте новый частокол." : "Припасы взяты. Караван растет.";
+    saveCaravanSnake(game);
+  } else {
+    game.segments.pop();
+    game.score += 1;
+  }
+}
+
+function addCaravanObstacle(game, board) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const point = {
+      x: 2 + Math.floor(Math.random() * (board.cols - 4)),
+      y: 2 + Math.floor(Math.random() * (board.rows - 4)),
+    };
+    if (caravanCellFree(point, game)) {
+      game.obstacles.push(point);
+      return;
+    }
+  }
+}
+
+function spawnCaravanFood(board, game) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const point = {
+      x: Math.floor(Math.random() * board.cols),
+      y: Math.floor(Math.random() * board.rows),
+    };
+    if (caravanCellFree(point, game)) {
+      const roll = Math.random();
+      return { ...point, type: roll > 0.84 ? "relic" : roll > 0.58 ? "coin" : "supplies" };
+    }
+  }
+  return { x: board.cols - 3, y: board.rows - 3, type: "supplies" };
+}
+
+function caravanCellFree(point, game) {
+  return !game.segments.some((segment) => segment.x === point.x && segment.y === point.y) &&
+    !game.obstacles.some((obstacle) => obstacle.x === point.x && obstacle.y === point.y) &&
+    !(game.food && game.food.x === point.x && game.food.y === point.y);
+}
+
+function updateCaravanSnakeHud(scoreNode, statusNode, game) {
+  if (!scoreNode || !statusNode) return;
+  scoreNode.innerHTML = "";
+  scoreNode.append(
+    el("strong", "", Math.floor(game.score)),
+    el("span", "", `припасы: ${game.relics} · длина: ${game.segments.length} · темп: ${Math.max(1, Math.round((0.26 - game.stepDelay) * 100))}`)
+  );
+  statusNode.textContent = game.message;
+}
+
+function drawCaravanSnake(ctx, game, board, world) {
+  ctx.clearRect(0, 0, world.w, world.h);
+  const bg = ctx.createLinearGradient(0, 0, world.w, world.h);
+  bg.addColorStop(0, "#111719");
+  bg.addColorStop(0.52, "#1f2925");
+  bg.addColorStop(1, "#2b2118");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, world.w, world.h);
+  drawCaravanBackdrop(ctx, board, world, game.time);
+  drawCaravanBoard(ctx, board);
+  game.obstacles.forEach((obstacle) => drawCaravanObstacle(ctx, board, obstacle));
+  drawCaravanFood(ctx, board, game.food, game.time);
+  for (let index = game.segments.length - 1; index >= 0; index -= 1) {
+    drawCaravanSegment(ctx, board, game.segments[index], index, game);
+  }
+  if (!game.started || game.paused || game.gameOver) drawCaravanOverlay(ctx, world, game);
+}
+
+function drawCaravanBackdrop(ctx, board, world, time) {
+  ctx.strokeStyle = "rgba(212, 167, 79, 0.07)";
+  ctx.lineWidth = 1;
+  for (let x = -80; x < world.w + 80; x += 64) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + 128, world.h);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 10; i += 1) {
+    const x = 32 + (i % 5) * 172;
+    const y = i < 5 ? 22 : world.h - 34;
+    ctx.fillStyle = `rgba(212, 167, 79, ${0.15 + Math.sin(time * 2 + i) * 0.04})`;
+    ctx.beginPath();
+    ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
+  ctx.fillRect(board.x - 16, board.y - 16, board.cols * board.cell + 32, board.rows * board.cell + 32);
+}
+
+function drawCaravanBoard(ctx, board) {
+  const width = board.cols * board.cell;
+  const height = board.rows * board.cell;
+  const ground = ctx.createLinearGradient(board.x, board.y, board.x + width, board.y + height);
+  ground.addColorStop(0, "#26312d");
+  ground.addColorStop(0.55, "#222b28");
+  ground.addColorStop(1, "#2d251b");
+  ctx.fillStyle = ground;
+  ctx.fillRect(board.x, board.y, width, height);
+  ctx.strokeStyle = "rgba(242, 229, 201, 0.055)";
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= board.cols; x += 1) {
+    ctx.beginPath();
+    ctx.moveTo(board.x + x * board.cell, board.y);
+    ctx.lineTo(board.x + x * board.cell, board.y + height);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= board.rows; y += 1) {
+    ctx.beginPath();
+    ctx.moveTo(board.x, board.y + y * board.cell);
+    ctx.lineTo(board.x + width, board.y + y * board.cell);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(212, 167, 79, 0.46)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(board.x - 1, board.y - 1, width + 2, height + 2);
+}
+
+function drawCaravanObstacle(ctx, board, obstacle) {
+  const p = caravanCellCenter(board, obstacle);
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.32)";
+  ctx.beginPath();
+  ctx.ellipse(0, 7, 12, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#6d4b2f";
+  ctx.lineWidth = 4;
+  for (let i = -1; i <= 1; i += 1) {
+    ctx.beginPath();
+    ctx.moveTo(i * 7, 8);
+    ctx.lineTo(i * 7 + 2, -9);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "#b98d52";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-12, 0);
+  ctx.lineTo(12, -2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawCaravanFood(ctx, board, food, time) {
+  if (!food) return;
+  const p = caravanCellCenter(board, food);
+  ctx.save();
+  ctx.translate(p.x, p.y + Math.sin(time * 5) * 1.4);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+  ctx.beginPath();
+  ctx.ellipse(0, 9, 11, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (food.type === "relic") {
+    ctx.fillStyle = "#4da9a7";
+    ctx.strokeStyle = "#f2e5c9";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -12);
+    ctx.lineTo(10, 0);
+    ctx.lineTo(0, 12);
+    ctx.lineTo(-10, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (food.type === "coin") {
+    ctx.fillStyle = "#d4a74f";
+    ctx.beginPath();
+    ctx.arc(0, 0, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#6d4b2f";
+    ctx.font = "900 10px Inter, Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("А", 0, 1);
+  } else {
+    ctx.fillStyle = "#c8bda4";
+    ctx.beginPath();
+    ctx.roundRect?.(-9, -8, 18, 16, 5);
+    if (!ctx.roundRect) {
+      ctx.rect(-9, -8, 18, 16);
+    }
+    ctx.fill();
+    ctx.strokeStyle = "#6d4b2f";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawCaravanSegment(ctx, board, segment, index, game) {
+  const p = caravanCellCenter(board, segment);
+  const isHead = index === 0;
+  const direction = isHead ? game.direction : segmentDirection(game.segments[index - 1], segment);
+  const angle = Math.atan2(direction.y, direction.x);
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(angle);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.34)";
+  ctx.beginPath();
+  ctx.ellipse(0, 8, isHead ? 14 : 11, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (isHead) {
+    const shield = ctx.createLinearGradient(-13, -13, 13, 13);
+    shield.addColorStop(0, "#f2e5c9");
+    shield.addColorStop(0.52, "#d4a74f");
+    shield.addColorStop(1, "#6d4b2f");
+    ctx.fillStyle = shield;
+    ctx.beginPath();
+    ctx.moveTo(13, 0);
+    ctx.lineTo(2, 12);
+    ctx.lineTo(-13, 8);
+    ctx.lineTo(-13, -8);
+    ctx.lineTo(2, -12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#111719";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#111719";
+    ctx.fillRect(-3, -8, 4, 16);
+    ctx.fillRect(-8, -2, 14, 4);
+  } else {
+    ctx.fillStyle = index % 2 ? "#8c5a34" : "#527a58";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 10, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(242, 229, 201, 0.32)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = "#d4a74f";
+    ctx.beginPath();
+    ctx.arc(5, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function segmentDirection(previous, current) {
+  const dx = previous.x - current.x;
+  const dy = previous.y - current.y;
+  if (Math.abs(dx) + Math.abs(dy) === 1) return { x: dx, y: dy };
+  return { x: 1, y: 0 };
+}
+
+function caravanCellCenter(board, point) {
+  return {
+    x: board.x + point.x * board.cell + board.cell / 2,
+    y: board.y + point.y * board.cell + board.cell / 2,
+  };
+}
+
+function drawCaravanOverlay(ctx, world, game) {
+  ctx.fillStyle = "rgba(0, 0, 0, 0.46)";
+  ctx.fillRect(0, 0, world.w, world.h);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#f2e5c9";
+  ctx.font = "800 34px Inter, Arial";
+  const title = game.gameOver ? "Караван разбит" : game.started ? "Пауза каравана" : "Караван ждет";
+  ctx.fillText(title, world.w / 2, world.h / 2 - 18);
+  ctx.fillStyle = "#d4a74f";
+  ctx.font = "700 18px Inter, Arial";
+  const hint = game.gameOver ? "Нажми «Начать заново»" : game.started ? "Esc или «Продолжить»" : "Нажми «Начать путь»";
+  ctx.fillText(hint, world.w / 2, world.h / 2 + 20);
 }
 
 function loadMinigameState() {
