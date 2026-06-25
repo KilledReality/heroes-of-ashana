@@ -715,6 +715,7 @@ let searchTerm = "";
 let tagTooltipTimer = null;
 let activeTagTooltip = null;
 let activeMinigameCleanup = null;
+let pendingWikiArticleScroll = false;
 
 const viewRoot = document.querySelector("#viewRoot");
 const navItems = document.querySelectorAll(".nav-item");
@@ -1644,6 +1645,24 @@ function guardedWikiNavigation(action) {
   return true;
 }
 
+function selectWikiArticle(articleId, options = {}) {
+  activeWikiId = articleId;
+  activeWikiCategoryId = "";
+  if (options.clearTag) activeWikiTag = "";
+  if (options.clearCategorySearch !== false) wikiCategorySearchTerm = "";
+  pendingWikiArticleScroll = true;
+}
+
+function scrollWikiArticleToTop() {
+  if (!pendingWikiArticleScroll || currentView !== "wiki") return;
+  pendingWikiArticleScroll = false;
+  requestAnimationFrame(() => {
+    const detail = document.querySelector(".wiki-layout > article.panel");
+    const target = detail?.querySelector(".wiki-article-view") || detail;
+    target?.scrollIntoView({ block: "start", behavior: "smooth" });
+  });
+}
+
 function wikiFormSnapshotFromArticle(article) {
   const categoryId = article.categoryId || categoryAliases[article.category] || wikiCategories[0]?.id || "places";
   const style = { ...defaultImageStyle(), ...(article.imageStyle ?? {}) };
@@ -1732,6 +1751,7 @@ function render() {
   }
   viewRoot.innerHTML = "";
   viewRoot.append(viewMap[currentView]());
+  scrollWikiArticleToTop();
 }
 
 function header(title, subtitle, action) {
@@ -1812,7 +1832,7 @@ function renderDashboard() {
         el("p", "", article.body.slice(0, 150) + "...")
       );
       card.addEventListener("click", () => {
-        activeWikiId = article.id;
+        selectWikiArticle(article.id);
         setView("wiki");
       });
       cards.append(card);
@@ -2099,7 +2119,7 @@ function renderWiki() {
   articles.forEach((article) => {
     const item = button(article.title, "list-button", () => {
       guardedWikiNavigation(() => {
-        activeWikiId = article.id;
+        selectWikiArticle(article.id, { clearCategorySearch: false });
       });
     });
     item.classList.toggle("active", article.id === activeWikiId);
@@ -2153,8 +2173,7 @@ function wikiIndex(articles) {
     categoryArticles.slice(0, 6).forEach((article) => {
       links.append(button(article.title, "wiki-link", () => {
         guardedWikiNavigation(() => {
-          activeWikiId = article.id;
-          activeWikiCategoryId = "";
+          selectWikiArticle(article.id);
         });
       }));
     });
@@ -2213,8 +2232,7 @@ function wikiCategoryPage(categoryId, articles) {
     );
     card.addEventListener("click", () => {
       guardedWikiNavigation(() => {
-        activeWikiId = article.id;
-        activeWikiCategoryId = "";
+        selectWikiArticle(article.id);
       });
     });
     grid.append(card);
@@ -2282,8 +2300,7 @@ function createWikiArticle() {
     gmBody: "Скрытые заметки мастера.",
   });
   state.wiki.unshift(article);
-  activeWikiId = article.id;
-  activeWikiCategoryId = "";
+  selectWikiArticle(article.id, { clearTag: true });
   activeWikiTag = "";
   wikiCategorySearchTerm = "";
   searchTerm = "";
@@ -2582,8 +2599,7 @@ function mapHexLinksPanel(region, hex) {
 }
 
 function openWikiArticle(articleId) {
-  activeWikiId = articleId;
-  activeWikiCategoryId = "";
+  selectWikiArticle(articleId, { clearTag: true });
   activeWikiTag = "";
   wikiCategorySearchTerm = "";
   searchTerm = "";
@@ -4683,12 +4699,24 @@ function createThreeRollStage(log, parsed) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   const visibleRolls = log.rolls.slice(0, 5);
   const diceAmount = visibleRolls.length;
+  const rollsSum = log.rolls.reduce((sum, value) => sum + value, 0);
+  const totalLabel = parsed.modifier
+    ? `Σ ${rollsSum} ${parsed.modifier > 0 ? `+${parsed.modifier}` : parsed.modifier} = ${log.total}`
+    : `Σ ${rollsSum}`;
+  if (diceAmount > 1) stage.classList.add("multi");
+  const valuesLayer = el("div", "roll-three-values");
+  const valueBadges = (diceAmount > 1 ? visibleRolls : []).map((_rollValue, index) => {
+    const badge = el("span", "roll-three-die-value", "?");
+    badge.style.left = `${dieBadgeLeft(index, diceAmount)}%`;
+    valuesLayer.append(badge);
+    return badge;
+  });
   const width = diceAmount > 1 ? 380 : 300;
   const height = diceAmount > 1 ? 212 : 170;
   renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
   renderer.setSize(width, height, false);
   renderer.shadowMap.enabled = true;
-  stage.append(renderer.domElement, resultBadge);
+  stage.append(renderer.domElement, valuesLayer, resultBadge);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
@@ -4749,7 +4777,11 @@ function createThreeRollStage(log, parsed) {
     });
     renderer.render(scene, camera);
     if (allDone) {
-      resultBadge.textContent = visibleRolls.length === 1 ? visibleRolls[0] : log.total;
+      valueBadges.forEach((badge, index) => {
+        badge.textContent = visibleRolls[index];
+        badge.classList.add("shown");
+      });
+      resultBadge.textContent = visibleRolls.length === 1 ? visibleRolls[0] : totalLabel;
       resultBadge.classList.add("shown");
     }
     frameId = requestAnimationFrame(animate);
@@ -4765,6 +4797,12 @@ function createThreeRollStage(log, parsed) {
       stage.remove();
     },
   };
+}
+
+function dieBadgeLeft(index, count) {
+  if (count <= 1) return 50;
+  const spread = Math.min(78, 23 * (count - 1));
+  return 50 + (index - (count - 1) / 2) * (spread / (count - 1));
 }
 
 function createThreeDieGroup(sides) {
@@ -5179,7 +5217,7 @@ function wikiCreator() {
       public: values.public,
     });
     state.wiki.unshift(article);
-    activeWikiId = article.id;
+    selectWikiArticle(article.id, { clearTag: true });
     saveState();
     setView("wiki");
   });

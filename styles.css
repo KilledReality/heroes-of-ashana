@@ -2157,6 +2157,40 @@ label {
   display: block;
 }
 
+.roll-three-values {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.roll-three-die-value {
+  position: absolute;
+  top: 22px;
+  min-width: 42px;
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  transform: translateX(-50%) translateY(-8px) scale(0.88);
+  opacity: 0;
+  color: #17120a;
+  border: 1px solid rgba(244, 226, 185, 0.74);
+  border-radius: 10px;
+  background: rgba(242, 210, 118, 0.94);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  font-size: 1.25rem;
+  font-weight: 950;
+  transition:
+    opacity 220ms ease,
+    transform 300ms cubic-bezier(0.18, 0.84, 0.28, 1.2);
+}
+
+.roll-three-die-value.shown {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
 .roll-three-result {
   position: absolute;
   left: 50%;
@@ -2185,6 +2219,23 @@ label {
 .roll-three-result.shown {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
+}
+
+.roll-three-stage.multi .roll-three-result {
+  left: auto;
+  right: 12px;
+  top: auto;
+  bottom: 12px;
+  min-width: 82px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  transform: translateY(8px) scale(0.92);
+  font-size: 1.05rem;
+}
+
+.roll-three-stage.multi .roll-three-result.shown {
+  transform: translateY(0) scale(1);
 }
 
 .roll-die {
