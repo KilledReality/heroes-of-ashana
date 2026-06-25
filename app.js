@@ -1,5 +1,6 @@
 const STORAGE_KEY = "ashana-campaign-v1";
 const UI_STORAGE_KEY = "ashana-ui-v1";
+const MINIGAME_STORAGE_KEY = "ashana-minigame-v1";
 const WIKI_INDEX_ID = "__wiki_index";
 const SUPABASE_URL = "https://msthqpeisopneallhkpk.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Qp0Z8J0uymysKz7KJRYUdA__74_rnbj";
@@ -6073,7 +6074,7 @@ function renderMinigame() {
   const shell = el("section", "panel minigame-panel");
   const top = el("div", "minigame-top");
   const score = el("div", "minigame-stat");
-  const status = el("div", "minigame-status", "WASD / стрелки - движение. Пробел - рывок.");
+  const status = el("div", "minigame-status", "WASD / стрелки - движение. Пробел - рывок. Esc - пауза.");
   let gameControl = null;
   const restart = button("Начать", "primary-button", () => {
     if (!gameControl) return;
@@ -6139,6 +6140,7 @@ function minigameKeyAction(event) {
     KeyA: "left",
     KeyD: "right",
     Space: "dash",
+    Escape: "pause",
   };
   if (codeMap[event.code]) return codeMap[event.code];
   const key = String(event.key || "").toLowerCase();
@@ -6157,7 +6159,59 @@ function minigameKeyAction(event) {
     в: "right",
     " ": "dash",
     spacebar: "dash",
+    escape: "pause",
+    esc: "pause",
   }[key] || "";
+}
+
+function loadMinigameState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MINIGAME_STORAGE_KEY) || "{}");
+    return saved && typeof saved === "object" ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveMinigameState(game) {
+  try {
+    localStorage.setItem(MINIGAME_STORAGE_KEY, JSON.stringify({
+      started: Boolean(game.started),
+      paused: Boolean(game.paused || !game.running),
+      running: false,
+      gameOver: Boolean(game.gameOver),
+      score: Number(game.score || 0),
+      relics: Number(game.relics || 0),
+      dashReady: Number(game.dashReady || 0),
+      time: Number(game.time || 0),
+      message: game.message || "",
+      player: minigameActorSnapshot(game.player),
+      hunter: minigameActorSnapshot(game.hunter),
+      relic: game.relic ? {
+        x: Number(game.relic.x || 0),
+        y: Number(game.relic.y || 0),
+        r: Number(game.relic.r || 16),
+      } : null,
+      obstacles: (game.obstacles ?? []).map((item) => ({
+        x: Number(item.x || 0),
+        y: Number(item.y || 0),
+        r: Number(item.r || 0),
+      })),
+      savedAt: new Date().toISOString(),
+    }));
+  } catch (error) {
+    console.warn("Не удалось сохранить прогресс мини-игры:", error.message);
+  }
+}
+
+function minigameActorSnapshot(actor) {
+  return actor ? {
+    x: Number(actor.x || 0),
+    y: Number(actor.y || 0),
+    r: Number(actor.r || 0),
+    speed: Number(actor.speed || 0),
+    facing: Number(actor.facing || 0),
+  } : null;
 }
 
 function startHereticRun(canvas, scoreNode, statusNode, options = {}) {
@@ -6187,12 +6241,37 @@ function startHereticRun(canvas, scoreNode, statusNode, options = {}) {
     ],
     embers: Array.from({ length: 34 }, () => ({ x: Math.random() * world.w, y: Math.random() * world.h, s: 0.5 + Math.random() * 1.8, a: Math.random() * Math.PI * 2 })),
   });
-  let game = createGame(false);
+  const restoreGame = () => {
+    const saved = loadMinigameState();
+    if (!saved?.started) return createGame(false);
+    const fallback = createGame(true);
+    return {
+      ...fallback,
+      ...saved,
+      running: false,
+      paused: !saved.gameOver,
+      gameOver: Boolean(saved.gameOver),
+      last: performance.now(),
+      frameId: 0,
+      message: saved.gameOver ? saved.message || "Погоня завершена." : "Пауза: прогресс восстановлен. Нажми «Продолжить».",
+      player: { ...fallback.player, ...(saved.player ?? {}), vx: 0, vy: 0 },
+      hunter: { ...fallback.hunter, ...(saved.hunter ?? {}), vx: 0, vy: 0 },
+      relic: { ...fallback.relic, ...(saved.relic ?? {}) },
+      obstacles: Array.isArray(saved.obstacles) && saved.obstacles.length ? saved.obstacles : fallback.obstacles,
+      embers: fallback.embers,
+    };
+  };
+  let game = restoreGame();
+  let lastMinigameSave = 0;
 
   const down = (event) => {
     const action = minigameKeyAction(event);
     if (!action) return;
     event.preventDefault();
+    if (action === "pause") {
+      if (!event.repeat) togglePause();
+      return;
+    }
     keys.add(action);
     if (action === "dash" && !event.repeat && game.started && !game.paused && !game.gameOver) {
       game.message = game.dashReady <= 0 ? "Рывок!" : game.message;
@@ -6221,6 +6300,22 @@ function startHereticRun(canvas, scoreNode, statusNode, options = {}) {
     minigameTouchKeys.clear();
     notify();
     updateMinigameHud(scoreNode, statusNode, game);
+    saveMinigameState(game);
+  };
+  const resumeGame = () => {
+    if (!game.started || game.gameOver) return;
+    game.running = true;
+    game.paused = false;
+    game.last = performance.now();
+    game.message = "Погоня продолжается.";
+    notify();
+    updateMinigameHud(scoreNode, statusNode, game);
+    saveMinigameState(game);
+  };
+  const togglePause = () => {
+    if (!game.started || game.gameOver) return;
+    if (game.paused) resumeGame();
+    else pause("Пауза. Нажми Esc или «Продолжить», чтобы вернуться в погоню.");
   };
   const pauseOnHidden = () => {
     if (document.hidden) pause("Пауза: вкладка была свернута. Нажми «Продолжить», чтобы вернуться в погоню.");
@@ -6235,6 +6330,10 @@ function startHereticRun(canvas, scoreNode, statusNode, options = {}) {
     updateHereticRun(game, keys, world, dt, scoreNode, statusNode);
     notify();
     drawHereticRun(ctx, game, world);
+    if (game.started && !game.paused && !game.gameOver && now - lastMinigameSave > 1200) {
+      lastMinigameSave = now;
+      saveMinigameState(game);
+    }
     game.frameId = requestAnimationFrame(loop);
   };
 
@@ -6249,27 +6348,29 @@ function startHereticRun(canvas, scoreNode, statusNode, options = {}) {
       game.last = performance.now();
       notify();
       updateMinigameHud(scoreNode, statusNode, game);
+      saveMinigameState(game);
     },
     restart: () => {
       game = createGame(true);
       game.last = performance.now();
       notify();
       updateMinigameHud(scoreNode, statusNode, game);
+      saveMinigameState(game);
     },
-    resume: () => {
-      if (!game.started || game.gameOver) return;
-      game.running = true;
-      game.paused = false;
-      game.last = performance.now();
-      game.message = "Погоня продолжается.";
-      notify();
-      updateMinigameHud(scoreNode, statusNode, game);
-    },
+    resume: resumeGame,
     pause,
     isStarted: () => game.started,
     isPaused: () => game.paused,
     isGameOver: () => game.gameOver,
     cleanup: () => {
+      if (game.started && !game.gameOver) {
+        game.running = false;
+        game.paused = true;
+        game.message = "Пауза: прогресс сохранен.";
+        saveMinigameState(game);
+      } else if (game.started) {
+        saveMinigameState(game);
+      }
       cancelAnimationFrame(game.frameId);
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
@@ -6349,6 +6450,7 @@ function updateHereticRun(game, keys, world, dt, scoreNode, statusNode) {
     game.paused = false;
     game.gameOver = true;
     game.message = `Инквизитор догнал еретика. Счет: ${Math.floor(game.score)}.`;
+    saveMinigameState(game);
   }
   updateMinigameHud(scoreNode, statusNode, game);
 }
@@ -6393,7 +6495,7 @@ function drawHereticRun(ctx, game, world) {
     ctx.fillText(game.started ? "Пауза" : "Погоня ждет", world.w / 2, world.h / 2 - 12);
     ctx.fillStyle = "#d4a74f";
     ctx.font = "700 18px Inter, Arial";
-    ctx.fillText(game.started ? "Нажми «Продолжить»" : "Нажми «Начать»", world.w / 2, world.h / 2 + 24);
+    ctx.fillText(game.started ? "Нажми Esc или «Продолжить»" : "Нажми «Начать»", world.w / 2, world.h / 2 + 24);
   }
 
   if (game.gameOver) {
