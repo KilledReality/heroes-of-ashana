@@ -1,7 +1,7 @@
 const STORAGE_KEY = "ashana-campaign-v1";
 const UI_STORAGE_KEY = "ashana-ui-v1";
 const MINIGAME_STORAGE_KEY = "ashana-minigame-v1";
-const DEFENSE_STORAGE_KEY = "ashana-defense-mirinka-v1";
+const DEFENSE_STORAGE_KEY = "ashana-defense-mirinka-v2";
 const WIKI_INDEX_ID = "__wiki_index";
 const SUPABASE_URL = "https://msthqpeisopneallhkpk.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Qp0Z8J0uymysKz7KJRYUdA__74_rnbj";
@@ -6232,7 +6232,7 @@ function defenseMainButtonText(game) {
   if (game.victory || game.gameOver) return "Начать заново";
   if (!game.started) return "Начать оборону";
   if (game.paused) return "Продолжить";
-  if (!game.waveRunning) return game.wave >= game.maxWaves ? "Итог" : `Волна ${game.wave + 1}`;
+  if (!game.waveRunning) return game.wave >= game.maxWaves ? "Итог" : `Начать волну ${game.wave + 1}`;
   return "Пауза";
 }
 
@@ -6474,7 +6474,7 @@ function createDefenseGame(world, laneDefs, started = false) {
   laneDefs.forEach((lane, index) => {
     lanes[lane.id] = {
       guard: index === 0 ? 1 : 0,
-      archer: index === 1 ? 1 : 0,
+      archer: 0,
       mage: 0,
       barricade: 0,
       cooldowns: { guard: 0, archer: 0, mage: 0 },
@@ -6491,8 +6491,8 @@ function createDefenseGame(world, laneDefs, started = false) {
     last: performance.now(),
     wave: 0,
     maxWaves: 5,
-    supplies: 18,
-    integrity: 100,
+    supplies: 12,
+    integrity: 85,
     defeated: 0,
     selectedLane: "north",
     spawnQueue: [],
@@ -6584,30 +6584,30 @@ function saveDefenseState(game) {
 function defenseLaneDefs(world) {
   const center = { x: world.w / 2, y: world.h / 2 };
   return [
-    { id: "north", title: "Северная дорога", start: { x: center.x, y: 24 }, end: { x: center.x, y: center.y - 43 }, color: "#6d876a" },
-    { id: "east", title: "Старый мост", start: { x: world.w - 30, y: center.y }, end: { x: center.x + 55, y: center.y }, color: "#4da9a7" },
-    { id: "south", title: "Заброшенные поля", start: { x: center.x, y: world.h - 26 }, end: { x: center.x, y: center.y + 50 }, color: "#b98d52" },
-    { id: "west", title: "Лесная кромка", start: { x: 30, y: center.y }, end: { x: center.x - 55, y: center.y }, color: "#527a58" },
+    { id: "north", title: "Северная дорога", start: { x: center.x, y: 24 }, end: { x: center.x, y: center.y - 43 }, label: { x: center.x + 92, y: 54 }, color: "#6d876a" },
+    { id: "east", title: "Старый мост", start: { x: world.w - 30, y: center.y }, end: { x: center.x + 55, y: center.y }, label: { x: world.w - 140, y: center.y - 42 }, color: "#4da9a7" },
+    { id: "south", title: "Заброшенные поля", start: { x: center.x, y: world.h - 26 }, end: { x: center.x, y: center.y + 50 }, label: { x: center.x + 116, y: world.h - 55 }, color: "#b98d52" },
+    { id: "west", title: "Лесная кромка", start: { x: 30, y: center.y }, end: { x: center.x - 55, y: center.y }, label: { x: 145, y: center.y - 42 }, color: "#527a58" },
   ];
 }
 
 function defenseEnemyTypes() {
   return {
-    bandit: { title: "Разбойник", hp: 34, speed: 0.065, damage: 7, reward: 2, radius: 10, color: "#8c5a34" },
-    cultist: { title: "Культист", hp: 26, speed: 0.085, damage: 5, reward: 2, radius: 9, color: "#6b2e58" },
-    firebug: { title: "Поджигатель", hp: 30, speed: 0.07, damage: 14, reward: 3, radius: 10, color: "#b54b38" },
-    brute: { title: "Одержимый", hp: 76, speed: 0.043, damage: 12, reward: 4, radius: 13, color: "#51615b" },
-    boss: { title: "Пепельный вожак", hp: 210, speed: 0.033, damage: 30, reward: 12, radius: 18, color: "#2b2420" },
+    bandit: { title: "Разбойник", hp: 40, speed: 0.073, damage: 8, reward: 1, radius: 10, color: "#8c5a34" },
+    cultist: { title: "Культист", hp: 32, speed: 0.095, damage: 6, reward: 1, radius: 9, color: "#6b2e58" },
+    firebug: { title: "Поджигатель", hp: 40, speed: 0.078, damage: 18, reward: 2, radius: 10, color: "#b54b38" },
+    brute: { title: "Одержимый", hp: 92, speed: 0.049, damage: 15, reward: 3, radius: 13, color: "#51615b" },
+    boss: { title: "Пепельный вожак", hp: 260, speed: 0.038, damage: 36, reward: 8, radius: 18, color: "#2b2420" },
   };
 }
 
 function createDefenseWave(wave, laneDefs) {
   const patterns = [
-    ["bandit", "bandit", "cultist", "bandit", "bandit"],
-    ["cultist", "bandit", "firebug", "bandit", "cultist", "bandit", "bandit"],
-    ["bandit", "firebug", "brute", "cultist", "firebug", "bandit", "brute"],
-    ["brute", "cultist", "firebug", "brute", "bandit", "firebug", "cultist", "brute"],
-    ["bandit", "cultist", "firebug", "brute", "firebug", "brute", "boss"],
+    ["bandit", "cultist", "bandit", "bandit", "cultist", "bandit"],
+    ["cultist", "bandit", "firebug", "bandit", "cultist", "bandit", "firebug", "bandit"],
+    ["bandit", "firebug", "brute", "cultist", "firebug", "bandit", "brute", "cultist", "firebug"],
+    ["brute", "cultist", "firebug", "brute", "bandit", "firebug", "cultist", "brute", "firebug", "brute"],
+    ["bandit", "cultist", "firebug", "brute", "firebug", "brute", "cultist", "firebug", "brute", "boss"],
   ];
   const lanes = laneDefs.map((lane) => lane.id);
   return (patterns[wave] ?? patterns[patterns.length - 1]).map((type, index) => ({
@@ -6646,7 +6646,7 @@ function renderDefenseControls(game, laneDefs, laneRow, shopNode, actions) {
 }
 
 function defenseCosts() {
-  return { guard: 5, archer: 6, mage: 10, barricade: 4 };
+  return { guard: 6, archer: 7, mage: 12, barricade: 5 };
 }
 
 function buyDefense(game, type) {
@@ -6678,12 +6678,12 @@ function updateDefenseGame(game, laneDefs, world, dt) {
   if (game.spawnQueue.length && game.spawnTimer <= 0) {
     const next = game.spawnQueue.shift();
     game.enemies.push(createDefenseEnemy(next.type, next.laneId));
-    game.spawnTimer = Math.max(0.42, 0.92 - game.wave * 0.08);
+    game.spawnTimer = Math.max(0.34, 0.74 - game.wave * 0.07);
   }
 
   game.enemies.forEach((enemy) => {
     const lane = game.lanes[enemy.laneId];
-    const slow = Math.max(0.48, 1 - (lane?.barricade ?? 0) * 0.12);
+    const slow = Math.max(0.62, 1 - (lane?.barricade ?? 0) * 0.09);
     enemy.progress += enemy.speed * slow * dt;
   });
   game.enemies = game.enemies.filter((enemy) => {
@@ -6717,7 +6717,7 @@ function updateDefenseGame(game, laneDefs, world, dt) {
       game.victory = true;
       game.message = `Миринка выстояла. Целостность: ${Math.ceil(game.integrity)}.`;
     } else {
-      game.supplies += 8 + game.wave * 2;
+      game.supplies += 5 + game.wave;
       game.message = `Волна отбита. Миринка держится. Подготовься к волне ${game.wave + 1}.`;
     }
     saveDefenseState(game);
@@ -6751,20 +6751,20 @@ function updateDefenseLaneCombat(game, lane, dt) {
   const target = laneEnemies[0];
   if (!target) return;
   if (laneState.guard > 0 && target.progress > 0.56 && laneState.cooldowns.guard <= 0) {
-    target.hp -= 13 * laneState.guard;
-    laneState.cooldowns.guard = 0.48;
+    target.hp -= 11 * laneState.guard;
+    laneState.cooldowns.guard = 0.54;
     game.effects.push({ type: "slash", laneId: lane.id, progress: target.progress, life: 0.18, t: 1 });
   }
   if (laneState.archer > 0 && laneState.cooldowns.archer <= 0) {
-    target.hp -= 9 * laneState.archer;
-    laneState.cooldowns.archer = 0.72;
+    target.hp -= 8 * laneState.archer;
+    laneState.cooldowns.archer = 0.78;
     game.projectiles.push({ laneId: lane.id, from: 0.62, to: target.progress, life: 0.28, t: 1, color: "#d4a74f" });
   }
   if (laneState.mage > 0 && laneState.cooldowns.mage <= 0) {
     laneEnemies.filter((enemy) => Math.abs(enemy.progress - target.progress) < 0.18).forEach((enemy) => {
-      enemy.hp -= 17 * laneState.mage;
+      enemy.hp -= 15 * laneState.mage;
     });
-    laneState.cooldowns.mage = 1.45;
+    laneState.cooldowns.mage = 1.58;
     game.effects.push({ type: "blast", laneId: lane.id, progress: target.progress, life: 0.36, t: 1, color: "#4da9a7" });
   }
 }
@@ -6792,7 +6792,9 @@ function drawDefenseGame(ctx, game, laneDefs, world) {
   bg.addColorStop(1, "#2a2119");
   ctx.fillStyle = bg;
   ctx.fillRect(-10, -10, world.w + 20, world.h + 20);
-  drawDefenseRoads(ctx, laneDefs);
+  drawDefenseScenery(ctx, world, game);
+  drawDefenseRoads(ctx, laneDefs, game);
+  drawDefenseLaneLabels(ctx, laneDefs, game);
   drawMirinkaVillage(ctx, world, game);
   laneDefs.forEach((lane) => drawLaneDefenders(ctx, game, lane));
   game.enemies.forEach((enemy) => drawDefenseEnemy(ctx, enemy, laneDefs));
@@ -6802,22 +6804,158 @@ function drawDefenseGame(ctx, game, laneDefs, world) {
   drawDefenseOverlay(ctx, game, world);
 }
 
-function drawDefenseRoads(ctx, laneDefs) {
+function drawDefenseScenery(ctx, world, game) {
+  ctx.save();
+  ctx.globalAlpha = 0.95;
+
+  for (let i = 0; i < 12; i += 1) {
+    const x = 52 + (i % 3) * 42 + Math.sin(i * 1.7) * 8;
+    const y = 56 + Math.floor(i / 3) * 48;
+    drawDefenseTree(ctx, x, y, 0.82 + (i % 3) * 0.1);
+  }
+
+  const water = ctx.createLinearGradient(world.w - 190, 0, world.w, world.h);
+  water.addColorStop(0, "rgba(77, 169, 167, 0.05)");
+  water.addColorStop(0.55, "rgba(77, 169, 167, 0.18)");
+  water.addColorStop(1, "rgba(77, 169, 167, 0.07)");
+  ctx.fillStyle = water;
+  ctx.beginPath();
+  ctx.moveTo(world.w - 190, 0);
+  ctx.bezierCurveTo(world.w - 140, 82, world.w - 172, 162, world.w - 108, 242);
+  ctx.bezierCurveTo(world.w - 42, 322, world.w - 114, 392, world.w - 54, world.h);
+  ctx.lineTo(world.w, world.h);
+  ctx.lineTo(world.w, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(180, 221, 216, 0.16)";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 8; i += 1) {
+    const y = 38 + i * 54 + Math.sin(game.time + i) * 3;
+    ctx.beginPath();
+    ctx.moveTo(world.w - 168, y);
+    ctx.bezierCurveTo(world.w - 128, y - 8, world.w - 92, y + 12, world.w - 38, y);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "rgba(212, 167, 79, 0.13)";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 8; i += 1) {
+    const y = world.h - 118 + i * 14;
+    ctx.beginPath();
+    ctx.moveTo(210 + i * 12, y);
+    ctx.lineTo(world.w - 208 + i * 4, y - 56);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "rgba(212, 167, 79, 0.16)";
+  for (let i = 0; i < 18; i += 1) {
+    const x = world.w / 2 - 100 + (i % 6) * 36;
+    const y = world.h / 2 - 76 + Math.floor(i / 6) * 52;
+    ctx.beginPath();
+    ctx.arc(x, y, 1.5 + Math.sin(game.time * 2 + i) * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawDefenseTree(ctx, x, y, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.24)";
+  ctx.beginPath();
+  ctx.ellipse(2, 15, 17, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#4d3925";
+  ctx.fillRect(-3, 3, 6, 17);
+  const crown = ctx.createRadialGradient(-4, -8, 2, 0, -2, 25);
+  crown.addColorStop(0, "#7fa15f");
+  crown.addColorStop(0.58, "#45683f");
+  crown.addColorStop(1, "#213729");
+  ctx.fillStyle = crown;
+  ctx.beginPath();
+  ctx.arc(-8, -4, 13, 0, Math.PI * 2);
+  ctx.arc(7, -6, 15, 0, Math.PI * 2);
+  ctx.arc(0, 5, 16, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawDefenseRoads(ctx, laneDefs, game) {
   laneDefs.forEach((lane) => {
+    const active = game.selectedLane === lane.id;
     const gradient = ctx.createLinearGradient(lane.start.x, lane.start.y, lane.end.x, lane.end.y);
-    gradient.addColorStop(0, "rgba(165, 126, 76, 0.36)");
-    gradient.addColorStop(1, "rgba(212, 167, 79, 0.68)");
-    ctx.strokeStyle = gradient;
-    ctx.lineWidth = 30;
+    gradient.addColorStop(0, active ? "rgba(181, 143, 82, 0.58)" : "rgba(129, 91, 55, 0.42)");
+    gradient.addColorStop(1, active ? "rgba(212, 167, 79, 0.84)" : "rgba(177, 130, 74, 0.62)");
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.34)";
+    ctx.lineWidth = active ? 42 : 38;
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(lane.start.x, lane.start.y);
     ctx.lineTo(lane.end.x, lane.end.y);
     ctx.stroke();
-    ctx.strokeStyle = "rgba(20, 25, 24, 0.55)";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = active ? 32 : 28;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(lane.start.x, lane.start.y);
+    ctx.lineTo(lane.end.x, lane.end.y);
     ctx.stroke();
+    ctx.strokeStyle = active ? "rgba(242, 229, 201, 0.28)" : "rgba(242, 229, 201, 0.16)";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    for (let i = 0.13; i < 0.9; i += 0.12) {
+      const p = defensePoint(lane, i);
+      const angle = Math.atan2(lane.end.y - lane.start.y, lane.end.x - lane.start.x);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(angle + Math.PI / 2);
+      ctx.strokeStyle = "rgba(58, 43, 29, 0.38)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-8, 0);
+      ctx.lineTo(8, Math.sin(i * 20) * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   });
+}
+
+function drawDefenseLaneLabels(ctx, laneDefs, game) {
+  laneDefs.forEach((lane) => {
+    if (!lane.label) return;
+    const active = game.selectedLane === lane.id;
+    ctx.save();
+    ctx.font = "800 13px Inter, Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const width = Math.max(116, ctx.measureText(lane.title).width + 28);
+    const height = 30;
+    drawDefensePanel(ctx, lane.label.x - width / 2, lane.label.y - height / 2, width, height, 9, active ? "rgba(212, 167, 79, 0.24)" : "rgba(14, 20, 21, 0.78)", active ? "rgba(212, 167, 79, 0.72)" : "rgba(242, 229, 201, 0.18)");
+    ctx.fillStyle = active ? "#f2e5c9" : "#d7ceb9";
+    ctx.fillText(lane.title, lane.label.x, lane.label.y + 1);
+    ctx.restore();
+  });
+}
+
+function drawDefensePanel(ctx, x, y, width, height, radius, fill, stroke) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
 }
 
 function drawMirinkaVillage(ctx, world, game) {
@@ -6915,25 +7053,148 @@ function drawDefenseEnemy(ctx, enemy, laneDefs) {
   if (!lane) return;
   const meta = defenseEnemyTypes()[enemy.type] ?? defenseEnemyTypes().bandit;
   const p = defensePoint(lane, enemy.progress);
+  const angle = Math.atan2(lane.end.y - lane.start.y, lane.end.x - lane.start.x);
   const pulse = Math.sin((enemy.progress * 20 + performance.now() / 120)) * 2;
+  const hpRatio = clamp(enemy.hp / enemy.maxHp, 0, 1);
   ctx.save();
   ctx.translate(p.x, p.y + pulse);
+  ctx.rotate(angle + Math.PI / 2);
   ctx.fillStyle = "rgba(0, 0, 0, 0.34)";
   ctx.beginPath();
-  ctx.ellipse(0, enemy.radius + 5, enemy.radius + 6, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, enemy.radius + 8, enemy.radius + 10, 6, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = meta.color;
-  ctx.beginPath();
-  ctx.arc(0, 0, enemy.radius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = enemy.type === "boss" ? "#d4a74f" : "rgba(242, 229, 201, 0.45)";
-  ctx.lineWidth = enemy.type === "boss" ? 3 : 1.5;
-  ctx.stroke();
+
+  const body = ctx.createLinearGradient(0, -enemy.radius - 12, 0, enemy.radius + 9);
+  body.addColorStop(0, lightenHex(meta.color, 28));
+  body.addColorStop(0.58, meta.color);
+  body.addColorStop(1, "#1a1512");
+  ctx.fillStyle = body;
+
+  if (enemy.type === "boss") {
+    drawDefenseBossEnemy(ctx, enemy.radius);
+  } else if (enemy.type === "brute") {
+    drawDefenseBruteEnemy(ctx, enemy.radius);
+  } else if (enemy.type === "firebug") {
+    drawDefenseFirebugEnemy(ctx, enemy.radius);
+  } else if (enemy.type === "cultist") {
+    drawDefenseCultistEnemy(ctx, enemy.radius);
+  } else {
+    drawDefenseBanditEnemy(ctx, enemy.radius);
+  }
+
   ctx.fillStyle = "rgba(0, 0, 0, 0.68)";
-  ctx.fillRect(-16, -enemy.radius - 12, 32, 4);
+  ctx.fillRect(-18, -enemy.radius - 17, 36, 4);
   ctx.fillStyle = "#b54b38";
-  ctx.fillRect(-16, -enemy.radius - 12, 32 * clamp(enemy.hp / enemy.maxHp, 0, 1), 4);
+  ctx.fillRect(-18, -enemy.radius - 17, 36 * hpRatio, 4);
   ctx.restore();
+}
+
+function drawDefenseBanditEnemy(ctx, radius) {
+  ctx.beginPath();
+  ctx.ellipse(0, 2, radius * 0.85, radius * 1.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(242, 229, 201, 0.42)";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.fillStyle = "#d1b08c";
+  ctx.beginPath();
+  ctx.arc(0, -radius * 0.92, radius * 0.48, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#352316";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-radius * 0.75, 2);
+  ctx.lineTo(radius * 0.75, -7);
+  ctx.stroke();
+}
+
+function drawDefenseCultistEnemy(ctx, radius) {
+  ctx.beginPath();
+  ctx.moveTo(0, -radius * 1.45);
+  ctx.quadraticCurveTo(radius * 1.05, -radius * 0.35, radius * 0.82, radius * 1.2);
+  ctx.lineTo(-radius * 0.82, radius * 1.2);
+  ctx.quadraticCurveTo(-radius * 1.05, -radius * 0.35, 0, -radius * 1.45);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(242, 229, 201, 0.35)";
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
+  ctx.beginPath();
+  ctx.ellipse(0, -radius * 0.55, radius * 0.42, radius * 0.3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#d4a74f";
+  ctx.fillRect(-1, -radius * 0.2, 2, radius * 0.9);
+}
+
+function drawDefenseFirebugEnemy(ctx, radius) {
+  ctx.shadowColor = "rgba(231, 122, 58, 0.65)";
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+  ctx.ellipse(0, 2, radius * 0.82, radius * 1.15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#f0c06b";
+  ctx.beginPath();
+  ctx.moveTo(0, -radius * 1.5);
+  ctx.quadraticCurveTo(radius * 0.55, -radius * 0.75, radius * 0.12, -radius * 0.2);
+  ctx.quadraticCurveTo(-radius * 0.45, -radius * 0.82, 0, -radius * 1.5);
+  ctx.fill();
+  ctx.strokeStyle = "#37231a";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-radius * 0.82, radius * 0.15);
+  ctx.lineTo(radius * 0.82, -radius * 0.18);
+  ctx.stroke();
+}
+
+function drawDefenseBruteEnemy(ctx, radius) {
+  ctx.beginPath();
+  ctx.ellipse(0, 3, radius * 1.02, radius * 1.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(242, 229, 201, 0.32)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = "#2b2420";
+  ctx.beginPath();
+  ctx.arc(0, -radius * 0.88, radius * 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#b54b38";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-radius * 0.7, -radius * 0.22);
+  ctx.lineTo(radius * 0.7, radius * 0.24);
+  ctx.stroke();
+}
+
+function drawDefenseBossEnemy(ctx, radius) {
+  ctx.shadowColor = "rgba(212, 167, 79, 0.36)";
+  ctx.shadowBlur = 18;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i += 1) {
+    const a = -Math.PI / 2 + (Math.PI * 2 * i) / 10;
+    const r = i % 2 ? radius * 1.1 : radius * 1.55;
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "#d4a74f";
+  ctx.lineWidth = 2.4;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.58)";
+  ctx.beginPath();
+  ctx.arc(0, -radius * 0.15, radius * 0.48, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function lightenHex(hex, amount) {
+  const clean = String(hex || "").replace("#", "");
+  if (clean.length !== 6) return hex;
+  const channels = [0, 2, 4].map((index) => parseInt(clean.slice(index, index + 2), 16));
+  return `rgb(${channels.map((value) => clamp(value + amount, 0, 255)).join(", ")})`;
 }
 
 function drawDefenseProjectile(ctx, projectile, laneDefs) {
