@@ -573,6 +573,19 @@ textarea:focus {
   white-space: pre-wrap;
 }
 
+.wiki-article-main {
+  display: grid;
+  grid-template-columns: minmax(240px, 420px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.wiki-article-text {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
 .wiki-category-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -617,6 +630,7 @@ textarea:focus {
 }
 
 .wiki-hero-image,
+.wiki-article-image,
 .wiki-card-image,
 .upload-preview {
   position: relative;
@@ -627,6 +641,7 @@ textarea:focus {
 }
 
 .wiki-hero-image img,
+.wiki-article-image img,
 .wiki-card-image img,
 .upload-preview img {
   width: 100%;
@@ -637,6 +652,24 @@ textarea:focus {
 
 .wiki-hero-image {
   min-height: 280px;
+}
+
+.wiki-article-image {
+  width: 100%;
+  max-width: 440px;
+  justify-self: start;
+}
+
+.wiki-article-image.image-aspect-portrait {
+  max-width: 320px;
+}
+
+.wiki-article-image.image-aspect-square {
+  max-width: 360px;
+}
+
+.wiki-article-image.image-aspect-banner {
+  max-width: 460px;
 }
 
 .wiki-card-image {
@@ -2079,7 +2112,7 @@ label {
   right: 24px;
   bottom: 24px;
   z-index: 40;
-  width: min(340px, calc(100vw - 32px));
+  width: min(420px, calc(100vw - 32px));
   display: grid;
   gap: 8px;
   padding: 18px;
@@ -2119,7 +2152,7 @@ label {
 
 .roll-three-stage canvas {
   width: 100%;
-  max-width: 300px;
+  max-width: 380px;
   height: auto;
   display: block;
 }
@@ -2521,6 +2554,7 @@ label {
 
   .dashboard-grid,
   .wiki-layout,
+  .wiki-article-main,
   .character-layout,
   .roller-layout,
   .map-layout,

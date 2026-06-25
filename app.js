@@ -9,6 +9,7 @@ let supabaseUser = null;
 let supabaseProfile = null;
 let cloudStatus = "Локальный режим";
 let cloudSaveTimer = null;
+let rollSubscription = null;
 
 const wikiCategories = [
   { id: "gods", title: "Боги", hint: "Пантеон, культы, догматы и святыни." },
@@ -1351,11 +1352,113 @@ async function loadCloudState() {
   activeCalendarDateKey = ashanaDateKey(state.meta.ashanaDate);
   activeSessionId = state.sessionLogs[0]?.id ?? null;
   mapZoom = state.map.zoom || 1;
+  await loadCloudRolls();
   renderCharacterSelect();
   render();
   cloudStatus = "Общая база подключена";
   renderCloudStatus();
   return true;
+}
+
+async function loadCloudRolls() {
+  if (!supabaseClient) return false;
+  const { data, error } = await supabaseClient
+    .from("roll_logs")
+    .select("id, actor, label, formula, rolls, total, created_at")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) {
+    console.warn("Общий журнал бросков пока недоступен:", error.message);
+    return false;
+  }
+  state.rolls = (data ?? []).map(normalizeCloudRoll);
+  persistLocalStateOnly();
+  return true;
+}
+
+function subscribeCloudRolls() {
+  if (!supabaseClient || rollSubscription) return;
+  rollSubscription = supabaseClient
+    .channel("ashana-roll-logs")
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "roll_logs" }, (payload) => {
+      const entry = normalizeCloudRoll(payload.new);
+      mergeRollEntry(entry);
+      if (["roller", "dashboard"].includes(currentView)) render();
+    })
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "roll_logs" }, () => {
+      loadCloudRolls().then(() => {
+        if (["roller", "dashboard"].includes(currentView)) render();
+      });
+    })
+    .subscribe((status) => {
+      if (status === "CHANNEL_ERROR") console.warn("Realtime журнала бросков недоступен");
+    });
+}
+
+function normalizeCloudRoll(row) {
+  const timestamp = row?.created_at || row?.timestamp || new Date().toISOString();
+  return {
+    id: row?.id || crypto.randomUUID(),
+    actor: row?.actor || "Партия",
+    label: row?.label || "",
+    formula: row?.formula || "1d20",
+    rolls: Array.isArray(row?.rolls) ? row.rolls.map(Number) : [],
+    total: Number(row?.total ?? 0),
+    timestamp,
+    createdAt: new Date(timestamp).toLocaleString("ru-RU"),
+  };
+}
+
+function mergeRollEntry(entry) {
+  if (!entry?.id || state.rolls.some((item) => item.id === entry.id)) return false;
+  state.rolls.unshift(entry);
+  state.rolls = state.rolls
+    .slice(0, 240)
+    .sort((a, b) => rollTimeValue(b) - rollTimeValue(a))
+    .slice(0, 200);
+  persistLocalStateOnly();
+  return true;
+}
+
+function rollTimeValue(entry) {
+  const value = Date.parse(entry?.timestamp || entry?.createdAt || "");
+  return Number.isFinite(value) ? value : 0;
+}
+
+async function saveRollToCloud(entry) {
+  if (!supabaseClient || !entry) return false;
+  const { error } = await supabaseClient.from("roll_logs").insert({
+    id: entry.id,
+    actor: entry.actor,
+    label: entry.label,
+    formula: entry.formula,
+    rolls: entry.rolls,
+    total: entry.total,
+    created_at: entry.timestamp || new Date().toISOString(),
+  });
+  if (error) {
+    console.warn("Бросок не отправлен в общий журнал:", error.message);
+    return false;
+  }
+  return true;
+}
+
+async function clearCloudRolls() {
+  if (!supabaseClient || !supabaseUser || !isAdmin) return false;
+  const { error } = await supabaseClient.from("roll_logs").delete().neq("id", "");
+  if (error) {
+    alert(`Не удалось очистить общий журнал бросков: ${error.message}`);
+    return false;
+  }
+  return true;
+}
+
+function persistLocalStateOnly() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(compactStateForStorage(state)));
+  } catch (error) {
+    console.warn("Локальное сохранение журнала бросков недоступно:", error.message);
+  }
 }
 
 function compactStateForStorage(source) {
@@ -1400,6 +1503,7 @@ function initSupabase() {
     return;
   }
   supabaseClient = supabaseFactory.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  subscribeCloudRolls();
   supabaseClient.auth.getSession().then(async ({ data }) => {
     await applySupabaseSession(data.session);
   });
@@ -2120,16 +2224,21 @@ function wikiCategoryPage(categoryId, articles) {
 }
 
 function wikiArticleView(active) {
-  const root = el("div", "admin-stack");
-  if (active.image) {
-    root.append(wikiImage(active, "wiki-hero-image"));
-  }
-  root.append(
+  const root = el("div", "admin-stack wiki-article-view");
+  const articleText = el("div", "wiki-article-text");
+  articleText.append(
     el("p", "eyebrow", wikiCategoryTitle(active.categoryId)),
     el("h3", "", active.title),
     tags(active.tags.concat(active.public ? ["игрокам"] : ["мастер"])),
     el("div", "article-body", active.body)
   );
+  if (active.image) {
+    const articleMain = el("div", "wiki-article-main");
+    articleMain.append(wikiImage(active, "wiki-article-image"), articleText);
+    root.append(articleMain);
+  } else {
+    root.append(articleText);
+  }
   if (isAdmin && active.gmBody) {
     const gm = el("div", "gm-note");
     gm.append(el("p", "eyebrow", "GM"), el("div", "article-body", active.gmBody));
@@ -4474,9 +4583,10 @@ function renderRoller() {
   if (isAdmin) {
     logPanel.append(
       actionRow([
-        button("Очистить журнал", "small-button", () => {
+        button("Очистить журнал", "small-button", async () => {
           state.rolls = [];
           saveState();
+          await clearCloudRolls();
           render();
         }),
       ])
@@ -4499,6 +4609,7 @@ function rollFormula(formula, label = "") {
   const rolls = Array.from({ length: parsed.count }, () => 1 + Math.floor(Math.random() * parsed.sides));
   const total = rolls.reduce((sum, value) => sum + value, 0) + parsed.modifier;
   const actor = state.characters.find((item) => item.id === activeCharacterId)?.name ?? "Партия";
+  const timestamp = new Date().toISOString();
   const entry = {
     id: crypto.randomUUID(),
     actor,
@@ -4506,11 +4617,13 @@ function rollFormula(formula, label = "") {
     formula: normalizeRoll(parsed),
     rolls,
     total,
-    createdAt: new Date().toLocaleString("ru-RU"),
+    timestamp,
+    createdAt: new Date(timestamp).toLocaleString("ru-RU"),
   };
   state.rolls.unshift(entry);
   state.rolls = state.rolls.slice(0, 200);
   saveState();
+  saveRollToCloud(entry);
   render();
   showRollPopup(entry);
 }
@@ -4568,8 +4681,10 @@ function createThreeRollStage(log, parsed) {
   const stage = el("div", "roll-three-stage");
   const resultBadge = el("div", "roll-three-result", "?");
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  const width = 300;
-  const height = log.rolls.length > 1 ? 190 : 170;
+  const visibleRolls = log.rolls.slice(0, 5);
+  const diceAmount = visibleRolls.length;
+  const width = diceAmount > 1 ? 380 : 300;
+  const height = diceAmount > 1 ? 212 : 170;
   renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
   renderer.setSize(width, height, false);
   renderer.shadowMap.enabled = true;
@@ -4577,7 +4692,7 @@ function createThreeRollStage(log, parsed) {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
-  camera.position.set(0, 2.8, 6.1);
+  camera.position.set(0, diceAmount > 1 ? 3.0 : 2.8, diceAmount > 1 ? 7.4 : 6.1);
   camera.lookAt(0, 0.25, 0);
   scene.add(new THREE.HemisphereLight(0xfff1cf, 0x1b2426, 2.1));
   const keyLight = new THREE.DirectionalLight(0xffdf96, 3.4);
@@ -4585,7 +4700,7 @@ function createThreeRollStage(log, parsed) {
   keyLight.castShadow = true;
   scene.add(keyLight);
   const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(3.2, 64),
+    new THREE.CircleGeometry(diceAmount > 1 ? 4.4 : 3.2, 64),
     new THREE.ShadowMaterial({ opacity: 0.22 })
   );
   floor.rotation.x = -Math.PI / 2;
@@ -4593,14 +4708,16 @@ function createThreeRollStage(log, parsed) {
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const visibleRolls = log.rolls.slice(0, 5);
-  const spacing = visibleRolls.length > 1 ? 1.35 : 0;
+  const spacing = diceAmount > 1 ? 1.8 : 0;
+  const baseScale = diceAmount >= 4 ? 0.68 : diceAmount === 3 ? 0.78 : diceAmount === 2 ? 0.86 : 1;
   const groups = visibleRolls.map((rollValue, index) => {
     const group = createThreeDieGroup(parsed.sides);
     group.position.x = (index - (visibleRolls.length - 1) / 2) * spacing;
     group.position.y = 1.8 + Math.random() * 0.5;
+    group.scale.setScalar(baseScale);
     group.userData = {
       finalValue: rollValue,
+      baseScale,
       startRotation: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
       spin: new THREE.Vector3(8 + Math.random() * 3, 10 + Math.random() * 4, 7 + Math.random() * 3),
       finalRotation: new THREE.Euler(Math.random() * 0.55, Math.random() * 0.55, Math.random() * 0.55),
@@ -4628,7 +4745,7 @@ function createThreeRollStage(log, parsed) {
       group.rotation.x = group.userData.startRotation.x + group.userData.spin.x * (1 - Math.pow(1 - t, 2)) + group.userData.finalRotation.x * eased;
       group.rotation.y = group.userData.startRotation.y + group.userData.spin.y * (1 - Math.pow(1 - t, 2)) + group.userData.finalRotation.y * eased;
       group.rotation.z = group.userData.startRotation.z + group.userData.spin.z * (1 - Math.pow(1 - t, 2)) + group.userData.finalRotation.z * eased;
-      group.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.04);
+      group.scale.setScalar(group.userData.baseScale * (1 + Math.sin(t * Math.PI) * 0.04));
     });
     renderer.render(scene, camera);
     if (allDone) {
