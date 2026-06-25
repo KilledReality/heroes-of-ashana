@@ -6116,7 +6116,19 @@ function renderMinigame() {
     controls.append(control);
   });
 
-  shell.append(top, canvasWrap, controls);
+  const help = el("div", "minigame-help");
+  [
+    ["WASD", "движение"],
+    ["↑ ↓ ← →", "движение"],
+    ["Space", "рывок"],
+    ["Esc", "пауза / продолжить"],
+  ].forEach(([key, label]) => {
+    const item = el("span", "minigame-help-item");
+    item.append(el("kbd", "", key), document.createTextNode(label));
+    help.append(item);
+  });
+
+  shell.append(top, canvasWrap, controls, help);
   root.append(shell);
   gameControl = startHereticRun(canvas, score, status, {
     onStateChange: (game) => {
