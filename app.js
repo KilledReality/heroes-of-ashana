@@ -1,4 +1,5 @@
 const STORAGE_KEY = "ashana-campaign-v1";
+const UI_STORAGE_KEY = "ashana-ui-v1";
 const WIKI_INDEX_ID = "__wiki_index";
 const SUPABASE_URL = "https://msthqpeisopneallhkpk.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Qp0Z8J0uymysKz7KJRYUdA__74_rnbj";
@@ -717,6 +718,29 @@ let activeTagTooltip = null;
 let activeMinigameCleanup = null;
 let pendingWikiArticleScroll = false;
 
+const savedUiState = loadUiState();
+
+currentView = savedUiState.currentView || currentView;
+if (!isKnownView(currentView)) currentView = "dashboard";
+activeWikiId = savedUiState.activeWikiId || activeWikiId;
+activeWikiTag = savedUiState.activeWikiTag || activeWikiTag;
+activeWikiCategoryId = savedUiState.activeWikiCategoryId || activeWikiCategoryId;
+wikiCategorySearchTerm = savedUiState.wikiCategorySearchTerm || wikiCategorySearchTerm;
+activeCharacterId = savedUiState.activeCharacterId || activeCharacterId;
+activeCharacterTab = savedUiState.activeCharacterTab || activeCharacterTab;
+activeDirectoryTab = savedUiState.activeDirectoryTab || activeDirectoryTab;
+activeSettlementId = savedUiState.activeSettlementId || activeSettlementId;
+activeCalendarDateKey = savedUiState.activeCalendarDateKey || activeCalendarDateKey;
+activeSessionId = savedUiState.activeSessionId || activeSessionId;
+skillSearchTerm = savedUiState.skillSearchTerm || skillSearchTerm;
+activeGalleryTag = savedUiState.activeGalleryTag || activeGalleryTag;
+mapBrushTerrain = savedUiState.mapBrushTerrain || mapBrushTerrain;
+mapBrushEnabled = Boolean(savedUiState.mapBrushEnabled ?? mapBrushEnabled);
+mapZoom = Number(savedUiState.mapZoom || mapZoom);
+mapScroll = savedUiState.mapScroll || mapScroll;
+if (savedUiState.mapActiveRegionId) state.map.activeRegionId = savedUiState.mapActiveRegionId;
+if (savedUiState.mapSelectedHex) state.map.selectedHex = savedUiState.mapSelectedHex;
+
 const viewRoot = document.querySelector("#viewRoot");
 const navItems = document.querySelectorAll(".nav-item");
 const globalSearch = document.querySelector("#globalSearch");
@@ -745,6 +769,47 @@ function loadState() {
   } catch {
     return normalizeState(structuredClone(seedData));
   }
+}
+
+function loadUiState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || "{}");
+    return saved && typeof saved === "object" ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveUiState() {
+  try {
+    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({
+      currentView,
+      activeWikiId,
+      activeWikiTag,
+      activeWikiCategoryId,
+      wikiCategorySearchTerm,
+      activeCharacterId,
+      activeCharacterTab,
+      activeDirectoryTab,
+      activeSettlementId,
+      activeCalendarDateKey,
+      activeSessionId,
+      skillSearchTerm,
+      activeGalleryTag,
+      mapActiveRegionId: state.map.activeRegionId,
+      mapSelectedHex: state.map.selectedHex,
+      mapZoom,
+      mapScroll,
+      mapBrushTerrain,
+      mapBrushEnabled,
+    }));
+  } catch (error) {
+    console.warn("Не удалось сохранить положение интерфейса:", error.message);
+  }
+}
+
+function isKnownView(view) {
+  return ["dashboard", "wiki", "map", "directory", "settlements", "calendar", "sessions", "characters", "gallery", "quests", "roller", "minigame", "admin"].includes(view);
 }
 
 function normalizeState(raw) {
@@ -1349,10 +1414,25 @@ async function loadCloudState() {
   } else if (isAdmin) {
     await saveCloudState();
   }
-  activeCharacterId = state.characters[0]?.id ?? null;
-  activeCalendarDateKey = ashanaDateKey(state.meta.ashanaDate);
-  activeSessionId = state.sessionLogs[0]?.id ?? null;
-  mapZoom = state.map.zoom || 1;
+  if (!state.characters.some((character) => character.id === activeCharacterId)) {
+    activeCharacterId = state.characters[0]?.id ?? null;
+  }
+  if (!activeCalendarDateKey) activeCalendarDateKey = ashanaDateKey(state.meta.ashanaDate);
+  if (!state.sessionLogs.some((session) => session.id === activeSessionId)) {
+    activeSessionId = state.sessionLogs[0]?.id ?? null;
+  }
+  if (!state.settlements.some((settlement) => settlement.id === activeSettlementId)) {
+    activeSettlementId = state.settlements[0]?.id ?? null;
+  }
+  if (activeWikiId !== WIKI_INDEX_ID && !state.wiki.some((article) => article.id === activeWikiId)) {
+    activeWikiId = WIKI_INDEX_ID;
+    activeWikiCategoryId = "";
+  }
+  if (savedUiState.mapActiveRegionId && state.map.regions.some((region) => region.id === savedUiState.mapActiveRegionId)) {
+    state.map.activeRegionId = savedUiState.mapActiveRegionId;
+  }
+  if (savedUiState.mapSelectedHex) state.map.selectedHex = savedUiState.mapSelectedHex;
+  mapZoom = Number(savedUiState.mapZoom || state.map.zoom || 1);
   await loadCloudRolls();
   renderCharacterSelect();
   render();
@@ -1745,6 +1825,8 @@ function render() {
     admin: renderAdmin,
   };
 
+  if (!viewMap[currentView]) currentView = "dashboard";
+  navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === currentView));
   if (activeMinigameCleanup) {
     activeMinigameCleanup();
     activeMinigameCleanup = null;
@@ -1752,6 +1834,7 @@ function render() {
   viewRoot.innerHTML = "";
   viewRoot.append(viewMap[currentView]());
   scrollWikiArticleToTop();
+  saveUiState();
 }
 
 function header(title, subtitle, action) {
