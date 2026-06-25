@@ -6123,8 +6123,8 @@ function startHereticRun(canvas, scoreNode, statusNode) {
     dashReady: 0,
     time: 0,
     message: "Беги, пока инквизитор не достал протокол.",
-    player: { x: 160, y: 260, r: 16 },
-    hunter: { x: 760, y: 260, r: 21, speed: 108 },
+    player: { x: 160, y: 260, r: 18, facing: 0, vx: 0, vy: 0 },
+    hunter: { x: 760, y: 260, r: 24, speed: 108, facing: Math.PI, vx: 0, vy: 0 },
     relic: randomRelic(world),
     obstacles: [
       { x: 350, y: 145, r: 32 },
@@ -6183,8 +6183,11 @@ function updateHereticRun(game, keys, world, dt, scoreNode, statusNode) {
     game.dashReady = 1.4;
     game.message = "Рывок! Бумаги инквизитора разлетелись.";
   }
-  player.x += (input.x / length) * speed * dt;
-  player.y += (input.y / length) * speed * dt;
+  player.vx = (input.x / length) * speed;
+  player.vy = (input.y / length) * speed;
+  if (input.x || input.y) player.facing = Math.atan2(player.vy, player.vx);
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
   player.x = clamp(player.x, 24, world.w - 24);
   player.y = clamp(player.y, 24, world.h - 24);
 
@@ -6205,8 +6208,11 @@ function updateHereticRun(game, keys, world, dt, scoreNode, statusNode) {
   const chaseY = player.y - hunter.y;
   const chaseDistance = Math.hypot(chaseX, chaseY) || 1;
   const hunterSpeed = game.hunter.speed + game.time * 2.2 + game.relics * 8;
-  hunter.x += (chaseX / chaseDistance) * hunterSpeed * dt;
-  hunter.y += (chaseY / chaseDistance) * hunterSpeed * dt;
+  hunter.vx = (chaseX / chaseDistance) * hunterSpeed;
+  hunter.vy = (chaseY / chaseDistance) * hunterSpeed;
+  hunter.facing = Math.atan2(hunter.vy, hunter.vx);
+  hunter.x += hunter.vx * dt;
+  hunter.y += hunter.vy * dt;
 
   if (Math.hypot(player.x - game.relic.x, player.y - game.relic.y) < player.r + game.relic.r) {
     game.relics += 1;
@@ -6268,64 +6274,201 @@ function drawHereticRun(ctx, game, world) {
 
 function drawHeretic(ctx, hero, time) {
   ctx.save();
-  ctx.translate(hero.x, hero.y + Math.sin(time * 10) * 2);
-  ctx.fillStyle = "#161b1d";
+  const moving = Math.hypot(hero.vx || 0, hero.vy || 0) > 10;
+  const stride = moving ? Math.sin(time * 15) : Math.sin(time * 4) * 0.18;
+  const bob = moving ? Math.abs(Math.sin(time * 15)) * 2.4 : Math.sin(time * 3) * 0.7;
+  const angle = (hero.facing ?? 0) + Math.PI / 2;
+  ctx.translate(hero.x, hero.y + bob);
+  drawActorShadow(ctx, 28, 14, "rgba(0, 0, 0, 0.34)");
+  ctx.rotate(angle);
+
+  ctx.strokeStyle = "#0b0f10";
+  ctx.lineWidth = 6;
+  ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(0, -24);
-  ctx.quadraticCurveTo(20, -10, 18, 18);
-  ctx.quadraticCurveTo(0, 30, -18, 18);
-  ctx.quadraticCurveTo(-20, -10, 0, -24);
-  ctx.fill();
-  ctx.fillStyle = "#d4a74f";
-  ctx.beginPath();
-  ctx.arc(0, -8, 8, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.moveTo(-8, 10);
+  ctx.lineTo(-13 - stride * 4, 27);
+  ctx.moveTo(8, 10);
+  ctx.lineTo(13 + stride * 4, 27);
+  ctx.stroke();
+
   ctx.strokeStyle = "#4da9a7";
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(-14, 19);
-  ctx.lineTo(-23, 31);
-  ctx.moveTo(14, 19);
-  ctx.lineTo(23, 31);
+  ctx.moveTo(-11, -4);
+  ctx.lineTo(-22, 10 + stride * 4);
+  ctx.moveTo(11, -4);
+  ctx.lineTo(22, 10 - stride * 4);
   ctx.stroke();
+
+  const cloak = ctx.createLinearGradient(0, -32, 0, 28);
+  cloak.addColorStop(0, "#243638");
+  cloak.addColorStop(0.48, "#13191b");
+  cloak.addColorStop(1, "#070909");
+  ctx.fillStyle = cloak;
+  ctx.beginPath();
+  ctx.moveTo(0, -32);
+  ctx.quadraticCurveTo(24 + stride * 2, -11, 18, 24);
+  ctx.quadraticCurveTo(0, 35 + Math.abs(stride) * 3, -18, 24);
+  ctx.quadraticCurveTo(-24 - stride * 2, -11, 0, -32);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(77, 169, 167, 0.38)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = "#0f1516";
+  ctx.beginPath();
+  ctx.ellipse(0, -12, 13, 17, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#d4a74f";
+  ctx.beginPath();
+  ctx.arc(0, -10, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#4da9a7";
+  ctx.beginPath();
+  ctx.arc(0, 3, 4 + Math.sin(time * 8) * 0.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(242, 229, 201, 0.72)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-6, -16);
+  ctx.lineTo(6, -16);
+  ctx.stroke();
+
   ctx.restore();
 }
 
 function drawInquisitor(ctx, hunter, time) {
   ctx.save();
-  ctx.translate(hunter.x, hunter.y + Math.sin(time * 8) * 1.5);
-  ctx.fillStyle = "#efe3c7";
+  const moving = Math.hypot(hunter.vx || 0, hunter.vy || 0) > 10;
+  const stride = moving ? Math.sin(time * 12) : Math.sin(time * 3) * 0.14;
+  const bob = moving ? Math.abs(Math.sin(time * 12)) * 1.8 : Math.sin(time * 2.5) * 0.5;
+  const angle = (hunter.facing ?? Math.PI) + Math.PI / 2;
+  ctx.translate(hunter.x, hunter.y + bob);
+  drawActorShadow(ctx, 36, 17, "rgba(0, 0, 0, 0.42)");
+  ctx.rotate(angle);
+
+  ctx.strokeStyle = "#1c1712";
+  ctx.lineWidth = 7;
+  ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(0, -28);
-  ctx.lineTo(24, 22);
-  ctx.lineTo(-24, 22);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "#8c2f28";
-  ctx.fillRect(-16, 4, 32, 7);
+  ctx.moveTo(-11, 13);
+  ctx.lineTo(-18 - stride * 3, 31);
+  ctx.moveTo(11, 13);
+  ctx.lineTo(18 + stride * 3, 31);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#c8bda4";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(-17, -7);
+  ctx.lineTo(-28, 13 - stride * 3);
+  ctx.moveTo(17, -7);
+  ctx.lineTo(31, 14 + stride * 3);
+  ctx.stroke();
+
   ctx.strokeStyle = "#d4a74f";
   ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.moveTo(-20, -22);
-  ctx.lineTo(20, 22);
-  ctx.moveTo(20, -22);
-  ctx.lineTo(-20, 22);
+  ctx.moveTo(30, 13 + stride * 3);
+  ctx.lineTo(38, 25 + stride * 3);
   ctx.stroke();
+
+  const coat = ctx.createLinearGradient(0, -34, 0, 31);
+  coat.addColorStop(0, "#f1e6cf");
+  coat.addColorStop(0.55, "#b9aa8c");
+  coat.addColorStop(1, "#5b4a34");
+  ctx.fillStyle = coat;
+  ctx.beginPath();
+  ctx.moveTo(0, -36);
+  ctx.quadraticCurveTo(31, -15, 24, 30);
+  ctx.lineTo(0, 23);
+  ctx.lineTo(-24, 30);
+  ctx.quadraticCurveTo(-31, -15, 0, -36);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 244, 217, 0.72)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = "#8c2f28";
+  ctx.save();
+  ctx.rotate(-0.28);
+  ctx.fillRect(-24, -2, 48, 8);
+  ctx.restore();
+
+  ctx.fillStyle = "#2b241b";
+  ctx.beginPath();
+  ctx.ellipse(0, -21, 17, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#d7c8a7";
+  ctx.beginPath();
+  ctx.ellipse(0, -22, 25, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "#d4a74f";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, -4);
+  ctx.lineTo(0, 16);
+  ctx.moveTo(-8, 5);
+  ctx.lineTo(8, 5);
+  ctx.stroke();
+
   ctx.restore();
 }
 
 function drawRelic(ctx, relic, time) {
   ctx.save();
   ctx.translate(relic.x, relic.y);
-  ctx.rotate(time * 1.5);
-  ctx.fillStyle = "rgba(77, 169, 167, 0.25)";
+  const pulse = 1 + Math.sin(time * 5) * 0.08;
+  ctx.rotate(time * 1.1);
+  ctx.fillStyle = "rgba(77, 169, 167, 0.16)";
   ctx.beginPath();
-  ctx.arc(0, 0, 28 + Math.sin(time * 5) * 4, 0, Math.PI * 2);
+  ctx.arc(0, 0, 34 * pulse, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#4da9a7";
-  ctx.fillRect(-10, -10, 20, 20);
+
+  ctx.strokeStyle = "rgba(212, 167, 79, 0.75)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 28, 11, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 11, 28, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const crystal = ctx.createLinearGradient(-10, -16, 14, 18);
+  crystal.addColorStop(0, "#f2e5c9");
+  crystal.addColorStop(0.38, "#4da9a7");
+  crystal.addColorStop(1, "#1e5552");
+  ctx.fillStyle = crystal;
+  ctx.beginPath();
+  ctx.moveTo(0, -20);
+  ctx.lineTo(15, -5);
+  ctx.lineTo(8, 18);
+  ctx.lineTo(-8, 18);
+  ctx.lineTo(-15, -5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(242, 229, 201, 0.82)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
   ctx.fillStyle = "#f2e5c9";
-  ctx.fillRect(-4, -4, 8, 8);
+  ctx.beginPath();
+  ctx.arc(-4, -7, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawActorShadow(ctx, width, height, color) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(0, 22, width, height, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
