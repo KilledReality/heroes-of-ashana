@@ -713,6 +713,7 @@ let mapBrushEnabled = false;
 let searchTerm = "";
 let tagTooltipTimer = null;
 let activeTagTooltip = null;
+let activeMinigameCleanup = null;
 
 const viewRoot = document.querySelector("#viewRoot");
 const navItems = document.querySelectorAll(".nav-item");
@@ -1617,9 +1618,14 @@ function render() {
     gallery: renderGallery,
     quests: renderQuests,
     roller: renderRoller,
+    minigame: renderMinigame,
     admin: renderAdmin,
   };
 
+  if (activeMinigameCleanup) {
+    activeMinigameCleanup();
+    activeMinigameCleanup = null;
+  }
   viewRoot.innerHTML = "";
   viewRoot.append(viewMap[currentView]());
 }
@@ -5820,6 +5826,311 @@ function questEditor(quest) {
     render();
   });
   return form;
+}
+
+function renderMinigame() {
+  const root = el("div");
+  root.append(header("Еретик бежит", "Мини-аркада на пару минут: собери реликвии, не врежься в костры и не дай инквизитору догнать тебя."));
+
+  const shell = el("section", "panel minigame-panel");
+  const top = el("div", "minigame-top");
+  const score = el("div", "minigame-stat");
+  const status = el("div", "minigame-status", "WASD / стрелки - движение. Пробел - рывок.");
+  const restart = button("Начать заново", "primary-button", () => {
+    if (activeMinigameCleanup) activeMinigameCleanup();
+    activeMinigameCleanup = startHereticRun(canvas, score, status);
+  });
+  top.append(score, status, restart);
+
+  const canvasWrap = el("div", "minigame-canvas-wrap");
+  const canvas = document.createElement("canvas");
+  canvas.width = 900;
+  canvas.height = 520;
+  canvas.setAttribute("aria-label", "Мини-игра Еретик бежит");
+  canvasWrap.append(canvas);
+
+  const controls = el("div", "minigame-controls");
+  [
+    ["up", "↑"],
+    ["left", "←"],
+    ["dash", "рывок"],
+    ["right", "→"],
+    ["down", "↓"],
+  ].forEach(([key, label]) => {
+    const control = button(label, `small-button minigame-control ${key === "dash" ? "dash" : ""}`, null);
+    control.addEventListener("pointerdown", () => minigameTouchKeys.add(key));
+    control.addEventListener("pointerup", () => minigameTouchKeys.delete(key));
+    control.addEventListener("pointerleave", () => minigameTouchKeys.delete(key));
+    controls.append(control);
+  });
+
+  shell.append(top, canvasWrap, controls);
+  root.append(shell);
+  activeMinigameCleanup = startHereticRun(canvas, score, status);
+  return root;
+}
+
+const minigameTouchKeys = new Set();
+
+function startHereticRun(canvas, scoreNode, statusNode) {
+  const ctx = canvas.getContext("2d");
+  const keys = new Set();
+  const world = { w: canvas.width, h: canvas.height };
+  const game = {
+    running: true,
+    frameId: 0,
+    last: performance.now(),
+    score: 0,
+    relics: 0,
+    dashReady: 0,
+    time: 0,
+    message: "Беги, пока инквизитор не достал протокол.",
+    player: { x: 160, y: 260, r: 16 },
+    hunter: { x: 760, y: 260, r: 21, speed: 108 },
+    relic: randomRelic(world),
+    obstacles: [
+      { x: 350, y: 145, r: 32 },
+      { x: 520, y: 355, r: 38 },
+      { x: 690, y: 170, r: 30 },
+      { x: 240, y: 405, r: 28 },
+    ],
+    embers: Array.from({ length: 34 }, () => ({ x: Math.random() * world.w, y: Math.random() * world.h, s: 0.5 + Math.random() * 1.8, a: Math.random() * Math.PI * 2 })),
+  };
+
+  const down = (event) => {
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Spacebar"].includes(event.key)) event.preventDefault();
+    keys.add(event.key.toLowerCase());
+  };
+  const up = (event) => keys.delete(event.key.toLowerCase());
+  window.addEventListener("keydown", down);
+  window.addEventListener("keyup", up);
+
+  const loop = (now) => {
+    const dt = Math.min(0.033, (now - game.last) / 1000);
+    game.last = now;
+    updateHereticRun(game, keys, world, dt, scoreNode, statusNode);
+    drawHereticRun(ctx, game, world);
+    game.frameId = requestAnimationFrame(loop);
+  };
+
+  updateMinigameHud(scoreNode, statusNode, game);
+  game.frameId = requestAnimationFrame(loop);
+
+  return () => {
+    cancelAnimationFrame(game.frameId);
+    window.removeEventListener("keydown", down);
+    window.removeEventListener("keyup", up);
+    minigameTouchKeys.clear();
+  };
+}
+
+function updateHereticRun(game, keys, world, dt, scoreNode, statusNode) {
+  if (!game.running) {
+    updateMinigameHud(scoreNode, statusNode, game);
+    return;
+  }
+  game.time += dt;
+  game.score += dt * 10;
+  game.dashReady = Math.max(0, game.dashReady - dt);
+
+  const player = game.player;
+  const input = {
+    x: Number(keys.has("d") || keys.has("arrowright") || minigameTouchKeys.has("right")) - Number(keys.has("a") || keys.has("arrowleft") || minigameTouchKeys.has("left")),
+    y: Number(keys.has("s") || keys.has("arrowdown") || minigameTouchKeys.has("down")) - Number(keys.has("w") || keys.has("arrowup") || minigameTouchKeys.has("up")),
+  };
+  const length = Math.hypot(input.x, input.y) || 1;
+  const dash = (keys.has(" ") || minigameTouchKeys.has("dash")) && game.dashReady <= 0;
+  const speed = dash ? 430 : 215;
+  if (dash) {
+    game.dashReady = 1.4;
+    game.message = "Рывок! Бумаги инквизитора разлетелись.";
+  }
+  player.x += (input.x / length) * speed * dt;
+  player.y += (input.y / length) * speed * dt;
+  player.x = clamp(player.x, 24, world.w - 24);
+  player.y = clamp(player.y, 24, world.h - 24);
+
+  game.obstacles.forEach((obstacle) => {
+    const distance = Math.hypot(player.x - obstacle.x, player.y - obstacle.y);
+    const minDistance = player.r + obstacle.r;
+    if (distance < minDistance) {
+      const nx = (player.x - obstacle.x) / (distance || 1);
+      const ny = (player.y - obstacle.y) / (distance || 1);
+      player.x = obstacle.x + nx * minDistance;
+      player.y = obstacle.y + ny * minDistance;
+      game.score = Math.max(0, game.score - 18 * dt);
+    }
+  });
+
+  const hunter = game.hunter;
+  const chaseX = player.x - hunter.x;
+  const chaseY = player.y - hunter.y;
+  const chaseDistance = Math.hypot(chaseX, chaseY) || 1;
+  const hunterSpeed = game.hunter.speed + game.time * 2.2 + game.relics * 8;
+  hunter.x += (chaseX / chaseDistance) * hunterSpeed * dt;
+  hunter.y += (chaseY / chaseDistance) * hunterSpeed * dt;
+
+  if (Math.hypot(player.x - game.relic.x, player.y - game.relic.y) < player.r + game.relic.r) {
+    game.relics += 1;
+    game.score += 75;
+    game.message = "Реликвия спасена. Это точно не улика.";
+    game.relic = randomRelic(world, game.obstacles);
+  }
+
+  if (Math.hypot(player.x - hunter.x, player.y - hunter.y) < player.r + hunter.r) {
+    game.running = false;
+    game.message = `Инквизитор догнал еретика. Счет: ${Math.floor(game.score)}.`;
+  }
+  updateMinigameHud(scoreNode, statusNode, game);
+}
+
+function drawHereticRun(ctx, game, world) {
+  ctx.clearRect(0, 0, world.w, world.h);
+  const gradient = ctx.createLinearGradient(0, 0, world.w, world.h);
+  gradient.addColorStop(0, "#101719");
+  gradient.addColorStop(0.58, "#1d2524");
+  gradient.addColorStop(1, "#2b2118");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, world.w, world.h);
+
+  ctx.strokeStyle = "rgba(212, 167, 79, 0.08)";
+  ctx.lineWidth = 1;
+  for (let x = 0; x < world.w; x += 60) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x - 90, world.h);
+    ctx.stroke();
+  }
+
+  game.embers.forEach((ember) => {
+    ember.a += 0.018;
+    ctx.fillStyle = `rgba(212, 167, 79, ${0.18 + Math.sin(ember.a) * 0.08})`;
+    ctx.beginPath();
+    ctx.arc(ember.x, ember.y + Math.sin(ember.a) * 8, ember.s, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  game.obstacles.forEach((obstacle) => drawPyre(ctx, obstacle));
+  drawRelic(ctx, game.relic, game.time);
+  drawInquisitor(ctx, game.hunter, game.time);
+  drawHeretic(ctx, game.player, game.time);
+
+  if (!game.running) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.54)";
+    ctx.fillRect(0, 0, world.w, world.h);
+    ctx.fillStyle = "#f2e5c9";
+    ctx.font = "800 42px Inter, Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Ересь пресечена", world.w / 2, world.h / 2 - 12);
+    ctx.fillStyle = "#d4a74f";
+    ctx.font = "700 22px Inter, Arial";
+    ctx.fillText(`Счет: ${Math.floor(game.score)} · Реликвии: ${game.relics}`, world.w / 2, world.h / 2 + 30);
+  }
+}
+
+function drawHeretic(ctx, hero, time) {
+  ctx.save();
+  ctx.translate(hero.x, hero.y + Math.sin(time * 10) * 2);
+  ctx.fillStyle = "#161b1d";
+  ctx.beginPath();
+  ctx.moveTo(0, -24);
+  ctx.quadraticCurveTo(20, -10, 18, 18);
+  ctx.quadraticCurveTo(0, 30, -18, 18);
+  ctx.quadraticCurveTo(-20, -10, 0, -24);
+  ctx.fill();
+  ctx.fillStyle = "#d4a74f";
+  ctx.beginPath();
+  ctx.arc(0, -8, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#4da9a7";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-14, 19);
+  ctx.lineTo(-23, 31);
+  ctx.moveTo(14, 19);
+  ctx.lineTo(23, 31);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawInquisitor(ctx, hunter, time) {
+  ctx.save();
+  ctx.translate(hunter.x, hunter.y + Math.sin(time * 8) * 1.5);
+  ctx.fillStyle = "#efe3c7";
+  ctx.beginPath();
+  ctx.moveTo(0, -28);
+  ctx.lineTo(24, 22);
+  ctx.lineTo(-24, 22);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#8c2f28";
+  ctx.fillRect(-16, 4, 32, 7);
+  ctx.strokeStyle = "#d4a74f";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-20, -22);
+  ctx.lineTo(20, 22);
+  ctx.moveTo(20, -22);
+  ctx.lineTo(-20, 22);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawRelic(ctx, relic, time) {
+  ctx.save();
+  ctx.translate(relic.x, relic.y);
+  ctx.rotate(time * 1.5);
+  ctx.fillStyle = "rgba(77, 169, 167, 0.25)";
+  ctx.beginPath();
+  ctx.arc(0, 0, 28 + Math.sin(time * 5) * 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#4da9a7";
+  ctx.fillRect(-10, -10, 20, 20);
+  ctx.fillStyle = "#f2e5c9";
+  ctx.fillRect(-4, -4, 8, 8);
+  ctx.restore();
+}
+
+function drawPyre(ctx, obstacle) {
+  ctx.save();
+  ctx.translate(obstacle.x, obstacle.y);
+  ctx.fillStyle = "rgba(154, 71, 43, 0.26)";
+  ctx.beginPath();
+  ctx.arc(0, 0, obstacle.r + 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#4a3424";
+  ctx.beginPath();
+  ctx.arc(0, 0, obstacle.r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#d4a74f";
+  ctx.beginPath();
+  ctx.moveTo(0, -obstacle.r + 7);
+  ctx.quadraticCurveTo(15, -4, 0, obstacle.r - 8);
+  ctx.quadraticCurveTo(-16, 0, 0, -obstacle.r + 7);
+  ctx.fill();
+  ctx.restore();
+}
+
+function randomRelic(world, obstacles = []) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const relic = { x: 70 + Math.random() * (world.w - 140), y: 70 + Math.random() * (world.h - 140), r: 16 };
+    if (obstacles.every((item) => Math.hypot(relic.x - item.x, relic.y - item.y) > relic.r + item.r + 30)) return relic;
+  }
+  return { x: world.w / 2, y: world.h / 2, r: 16 };
+}
+
+function updateMinigameHud(scoreNode, statusNode, game) {
+  if (!scoreNode || !statusNode) return;
+  scoreNode.innerHTML = "";
+  scoreNode.append(
+    el("strong", "", Math.floor(game.score)),
+    el("span", "", `реликвии: ${game.relics} · рывок: ${game.dashReady <= 0 ? "готов" : game.dashReady.toFixed(1)}`)
+  );
+  statusNode.textContent = game.message;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function galleryEditor(item) {

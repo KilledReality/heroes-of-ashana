@@ -2370,6 +2370,83 @@ label {
   margin-top: 4px;
 }
 
+.minigame-panel {
+  display: grid;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.minigame-top {
+  display: grid;
+  grid-template-columns: minmax(150px, auto) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.minigame-stat {
+  min-height: 58px;
+  padding: 10px 12px;
+  display: grid;
+  align-content: center;
+  border: 1px solid rgba(212, 167, 79, 0.35);
+  border-radius: 8px;
+  background: rgba(212, 167, 79, 0.08);
+}
+
+.minigame-stat strong {
+  font-size: 1.55rem;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.minigame-stat span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.minigame-status {
+  min-height: 58px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.minigame-canvas-wrap {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101719;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.minigame-canvas-wrap canvas {
+  width: 100%;
+  aspect-ratio: 900 / 520;
+  display: block;
+  background: #101719;
+}
+
+.minigame-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.minigame-control {
+  min-width: 52px;
+  touch-action: none;
+}
+
+.minigame-control.dash {
+  min-width: 92px;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -2449,7 +2526,8 @@ label {
   .map-layout,
   .settlement-layout,
   .calendar-layout,
-  .session-layout {
+  .session-layout,
+  .minigame-top {
     grid-template-columns: 1fr;
   }
 
