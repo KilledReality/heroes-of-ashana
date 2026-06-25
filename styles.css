@@ -2455,8 +2455,9 @@ label {
 }
 
 .minigame-panel {
+  max-width: 920px;
   display: grid;
-  gap: 14px;
+  gap: 10px;
   overflow: hidden;
 }
 
@@ -2468,8 +2469,8 @@ label {
 }
 
 .minigame-stat {
-  min-height: 58px;
-  padding: 10px 12px;
+  min-height: 50px;
+  padding: 8px 12px;
   display: grid;
   align-content: center;
   border: 1px solid rgba(212, 167, 79, 0.35);
@@ -2490,8 +2491,8 @@ label {
 }
 
 .minigame-status {
-  min-height: 58px;
-  padding: 12px 14px;
+  min-height: 50px;
+  padding: 10px 12px;
   display: flex;
   align-items: center;
   border: 1px solid var(--line);
@@ -2501,6 +2502,9 @@ label {
 }
 
 .minigame-canvas-wrap {
+  width: min(100%, 860px, calc(52vh * 1.95));
+  max-width: 860px;
+  justify-self: center;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -2510,7 +2514,7 @@ label {
 
 .minigame-canvas-wrap canvas {
   width: 100%;
-  aspect-ratio: 900 / 520;
+  aspect-ratio: 820 / 420;
   display: block;
   background: #101719;
 }
@@ -2518,7 +2522,7 @@ label {
 .minigame-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   justify-content: center;
 }
 
