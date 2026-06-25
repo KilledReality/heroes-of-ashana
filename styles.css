@@ -2454,6 +2454,40 @@ label {
   margin-top: 4px;
 }
 
+.minigame-selector {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.minigame-card {
+  min-height: 92px;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  color: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.minigame-card strong {
+  font-size: 1rem;
+}
+
+.minigame-card span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.minigame-card.active,
+.minigame-card:hover {
+  border-color: rgba(212, 167, 79, 0.62);
+  background: rgba(212, 167, 79, 0.1);
+}
+
 .minigame-panel {
   max-width: 920px;
   display: grid;
@@ -2502,7 +2536,7 @@ label {
 }
 
 .minigame-canvas-wrap {
-  width: min(100%, 860px, calc(52vh * 1.95));
+  width: min(100%, 860px, 101vh);
   max-width: 860px;
   justify-self: center;
   overflow: hidden;
@@ -2533,6 +2567,64 @@ label {
 
 .minigame-control.dash {
   min-width: 92px;
+}
+
+.defense-panel {
+  max-width: 980px;
+}
+
+.defense-canvas-wrap {
+  width: min(100%, 900px, 101vh);
+}
+
+.defense-lane-row,
+.defense-shop {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.defense-lane-button,
+.defense-buy-button {
+  min-height: 54px;
+  padding: 9px 10px;
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  color: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.defense-lane-button.active,
+.defense-lane-button:hover,
+.defense-buy-button:hover:not(:disabled) {
+  border-color: rgba(212, 167, 79, 0.58);
+  background: rgba(212, 167, 79, 0.12);
+}
+
+.defense-lane-button span,
+.defense-buy-button span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.defense-buy-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.defense-shop-title {
+  min-height: 54px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  border: 1px solid rgba(212, 167, 79, 0.28);
+  border-radius: 8px;
+  background: rgba(212, 167, 79, 0.08);
+  font-weight: 900;
 }
 
 .minigame-help {

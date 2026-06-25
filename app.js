@@ -1,6 +1,7 @@
 const STORAGE_KEY = "ashana-campaign-v1";
 const UI_STORAGE_KEY = "ashana-ui-v1";
 const MINIGAME_STORAGE_KEY = "ashana-minigame-v1";
+const DEFENSE_STORAGE_KEY = "ashana-defense-mirinka-v1";
 const WIKI_INDEX_ID = "__wiki_index";
 const SUPABASE_URL = "https://msthqpeisopneallhkpk.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Qp0Z8J0uymysKz7KJRYUdA__74_rnbj";
@@ -717,6 +718,7 @@ let searchTerm = "";
 let tagTooltipTimer = null;
 let activeTagTooltip = null;
 let activeMinigameCleanup = null;
+let activeMinigameId = "heretic";
 let pendingWikiArticleScroll = false;
 
 const savedUiState = loadUiState();
@@ -735,6 +737,7 @@ activeCalendarDateKey = savedUiState.activeCalendarDateKey || activeCalendarDate
 activeSessionId = savedUiState.activeSessionId || activeSessionId;
 skillSearchTerm = savedUiState.skillSearchTerm || skillSearchTerm;
 activeGalleryTag = savedUiState.activeGalleryTag || activeGalleryTag;
+activeMinigameId = savedUiState.activeMinigameId || activeMinigameId;
 mapBrushTerrain = savedUiState.mapBrushTerrain || mapBrushTerrain;
 mapBrushEnabled = Boolean(savedUiState.mapBrushEnabled ?? mapBrushEnabled);
 mapZoom = Number(savedUiState.mapZoom || mapZoom);
@@ -797,6 +800,7 @@ function saveUiState() {
       activeSessionId,
       skillSearchTerm,
       activeGalleryTag,
+      activeMinigameId,
       mapActiveRegionId: state.map.activeRegionId,
       mapSelectedHex: state.map.selectedHex,
       mapZoom,
@@ -6069,7 +6073,30 @@ function questEditor(quest) {
 
 function renderMinigame() {
   const root = el("div");
-  root.append(header("Еретик бежит", "Мини-аркада на пару минут: собери реликвии, не врежься в костры и не дай инквизитору догнать тебя."));
+  root.append(header("Мини-игры", "Небольшие игровые сцены Асханы: погони, обороны и быстрые испытания между сессиями."));
+
+  const selector = el("div", "minigame-selector");
+  [
+    ["heretic", "Побег еретика", "Собери реликвии и не дай инквизитору тебя догнать."],
+    ["mirinka", "Оборона Миринки", "Выдержи ночной налет, распределяя защитников по дорогам поселения."],
+  ].forEach(([id, title, description]) => {
+    const card = button("", `minigame-card ${activeMinigameId === id ? "active" : ""}`, () => {
+      if (activeMinigameId === id) return;
+      activeMinigameId = id;
+      saveUiState();
+      render();
+    });
+    card.append(el("strong", "", title), el("span", "", description));
+    selector.append(card);
+  });
+  root.append(selector);
+
+  root.append(activeMinigameId === "mirinka" ? renderMirinkaDefense() : renderHereticMinigame());
+  return root;
+}
+
+function renderHereticMinigame() {
+  const root = el("div");
 
   const shell = el("section", "panel minigame-panel");
   const top = el("div", "minigame-top");
@@ -6137,6 +6164,76 @@ function renderMinigame() {
   });
   activeMinigameCleanup = gameControl.cleanup;
   return root;
+}
+
+function renderMirinkaDefense() {
+  const root = el("div");
+  const shell = el("section", "panel minigame-panel defense-panel");
+  const top = el("div", "minigame-top");
+  const score = el("div", "minigame-stat");
+  const status = el("div", "minigame-status", "Выбери направление, ставь защитников и переживи 5 волн. Space - следующая волна, Esc - пауза.");
+  let gameControl = null;
+  const mainButton = button("Начать оборону", "primary-button", () => {
+    if (!gameControl) return;
+    if (gameControl.isFinished()) {
+      gameControl.restart();
+      return;
+    }
+    if (!gameControl.isStarted()) {
+      gameControl.start();
+      return;
+    }
+    if (gameControl.canStartWave()) {
+      gameControl.startWave();
+      return;
+    }
+    if (gameControl.isPaused()) {
+      gameControl.resume();
+      return;
+    }
+    gameControl.pause("Пауза. Нажми «Продолжить», когда будешь готов держать оборону.");
+  });
+  top.append(score, status, mainButton);
+
+  const canvasWrap = el("div", "minigame-canvas-wrap defense-canvas-wrap");
+  const canvas = document.createElement("canvas");
+  canvas.width = 820;
+  canvas.height = 420;
+  canvas.setAttribute("aria-label", "Мини-игра Оборона Миринки");
+  canvasWrap.append(canvas);
+
+  const laneRow = el("div", "defense-lane-row");
+  const shop = el("div", "defense-shop");
+  const help = el("div", "minigame-help");
+  [
+    ["Клик по дороге", "выбор направления"],
+    ["Стража", "держит центр"],
+    ["Лучники", "бьют издалека"],
+    ["Маг", "урон по области"],
+    ["Баррикада", "замедляет"],
+  ].forEach(([key, label]) => {
+    const item = el("span", "minigame-help-item");
+    item.append(el("kbd", "", key), document.createTextNode(label));
+    help.append(item);
+  });
+
+  shell.append(top, canvasWrap, laneRow, shop, help);
+  root.append(shell);
+  gameControl = startMirinkaDefense(canvas, score, status, laneRow, shop, {
+    onStateChange: (game) => {
+      mainButton.textContent = defenseMainButtonText(game);
+    },
+  });
+  activeMinigameCleanup = gameControl.cleanup;
+  return root;
+}
+
+function defenseMainButtonText(game) {
+  if (game.victory || game.gameOver) return "Начать заново";
+  if (!game.started) return "Начать оборону";
+  if (game.paused) return "Продолжить";
+  if (!game.waveRunning) return game.wave >= game.maxWaves ? "Итог" : `Волна ${game.wave + 1}`;
+  return "Пауза";
 }
 
 const minigameTouchKeys = new Set();
@@ -6224,6 +6321,711 @@ function minigameActorSnapshot(actor) {
     speed: Number(actor.speed || 0),
     facing: Number(actor.facing || 0),
   } : null;
+}
+
+function startMirinkaDefense(canvas, scoreNode, statusNode, laneRow, shopNode, options = {}) {
+  const ctx = canvas.getContext("2d");
+  const world = { w: canvas.width, h: canvas.height };
+  const laneDefs = defenseLaneDefs(world);
+  let game = restoreDefenseGame(world, laneDefs);
+  let lastSave = 0;
+  let notifiedState = "";
+
+  const notify = () => {
+    const signature = `${game.started}-${game.paused}-${game.waveRunning}-${game.wave}-${game.victory}-${game.gameOver}-${game.selectedLane}`;
+    if (signature === notifiedState) return;
+    notifiedState = signature;
+    options.onStateChange?.(game);
+  };
+  const repaintControls = () => {
+    renderDefenseControls(game, laneDefs, laneRow, shopNode, {
+      selectLane: (laneId) => {
+        game.selectedLane = laneId;
+        saveDefenseState(game);
+        repaintControls();
+      },
+      buy: (type) => {
+        buyDefense(game, type);
+        saveDefenseState(game);
+        repaintControls();
+      },
+    });
+    updateDefenseHud(scoreNode, statusNode, game);
+    notify();
+  };
+  const pause = (message = "Пауза.") => {
+    if (!game.started || game.paused || game.victory || game.gameOver) return;
+    game.paused = true;
+    game.running = false;
+    game.message = message;
+    saveDefenseState(game);
+    repaintControls();
+  };
+  const resume = () => {
+    if (!game.started || game.victory || game.gameOver) return;
+    game.paused = false;
+    game.running = true;
+    game.last = performance.now();
+    game.message = game.waveRunning ? "Оборона продолжается." : "Подготовка. Можно усилить выбранную дорогу.";
+    saveDefenseState(game);
+    repaintControls();
+  };
+  const startWave = () => {
+    if (!game.started || game.paused || game.waveRunning || game.victory || game.gameOver) return;
+    game.waveRunning = true;
+    game.spawnQueue = createDefenseWave(game.wave, laneDefs);
+    game.spawnTimer = 0.2;
+    game.message = `Волна ${game.wave + 1}: враги идут к Миринке.`;
+    saveDefenseState(game);
+    repaintControls();
+  };
+  const start = () => {
+    if (game.started && !game.gameOver && !game.victory) return;
+    game = createDefenseGame(world, laneDefs, true);
+    game.message = "Миринка готовится к первой волне. Расставь защитников и начинай.";
+    saveDefenseState(game);
+    repaintControls();
+  };
+  const restart = () => {
+    game = createDefenseGame(world, laneDefs, true);
+    saveDefenseState(game);
+    repaintControls();
+  };
+  const togglePause = () => {
+    if (!game.started || game.gameOver || game.victory) return;
+    if (game.paused) resume();
+    else pause("Пауза. Нажми Esc или «Продолжить», чтобы вернуться к обороне.");
+  };
+  const keydown = (event) => {
+    if (event.code === "Escape") {
+      event.preventDefault();
+      if (!event.repeat) togglePause();
+    }
+    if (event.code === "Space") {
+      event.preventDefault();
+      if (!event.repeat && game.started && !game.paused && !game.waveRunning) startWave();
+    }
+  };
+  const click = (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const point = {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    };
+    const laneId = nearestDefenseLane(point, laneDefs);
+    if (!laneId) return;
+    game.selectedLane = laneId;
+    saveDefenseState(game);
+    repaintControls();
+  };
+  const pauseOnHidden = () => {
+    if (document.hidden) pause("Пауза: вкладка была свернута. Прогресс обороны сохранен.");
+  };
+  const pauseOnBlur = () => pause("Пауза: окно потеряло фокус. Прогресс обороны сохранен.");
+  window.addEventListener("keydown", keydown);
+  canvas.addEventListener("click", click);
+  document.addEventListener("visibilitychange", pauseOnHidden);
+  window.addEventListener("blur", pauseOnBlur);
+
+  const loop = (now) => {
+    const dt = Math.min(0.033, (now - game.last) / 1000);
+    game.last = now;
+    updateDefenseGame(game, laneDefs, world, dt);
+    drawDefenseGame(ctx, game, laneDefs, world);
+    updateDefenseHud(scoreNode, statusNode, game);
+    notify();
+    if (game.started && !game.paused && now - lastSave > 1000) {
+      lastSave = now;
+      saveDefenseState(game);
+    }
+    game.frameId = requestAnimationFrame(loop);
+  };
+  repaintControls();
+  game.frameId = requestAnimationFrame(loop);
+
+  return {
+    start,
+    restart,
+    startWave,
+    resume,
+    pause,
+    isStarted: () => game.started,
+    isPaused: () => game.paused,
+    isFinished: () => game.victory || game.gameOver,
+    canStartWave: () => game.started && !game.paused && !game.waveRunning && !game.victory && !game.gameOver,
+    cleanup: () => {
+      if (game.started && !game.victory && !game.gameOver) {
+        game.paused = true;
+        game.running = false;
+        game.message = "Пауза: прогресс обороны сохранен.";
+      }
+      saveDefenseState(game);
+      cancelAnimationFrame(game.frameId);
+      window.removeEventListener("keydown", keydown);
+      canvas.removeEventListener("click", click);
+      document.removeEventListener("visibilitychange", pauseOnHidden);
+      window.removeEventListener("blur", pauseOnBlur);
+    },
+  };
+}
+
+function createDefenseGame(world, laneDefs, started = false) {
+  const lanes = {};
+  laneDefs.forEach((lane, index) => {
+    lanes[lane.id] = {
+      guard: index === 0 ? 1 : 0,
+      archer: index === 1 ? 1 : 0,
+      mage: 0,
+      barricade: 0,
+      cooldowns: { guard: 0, archer: 0, mage: 0 },
+    };
+  });
+  return {
+    started,
+    paused: !started,
+    running: started,
+    waveRunning: false,
+    victory: false,
+    gameOver: false,
+    frameId: 0,
+    last: performance.now(),
+    wave: 0,
+    maxWaves: 5,
+    supplies: 18,
+    integrity: 100,
+    defeated: 0,
+    selectedLane: "north",
+    spawnQueue: [],
+    spawnTimer: 0,
+    enemies: [],
+    projectiles: [],
+    effects: [],
+    lanes,
+    time: 0,
+    shake: 0,
+    message: started ? "Миринка готовится к первой волне. Расставь защитников и начинай." : "Нажми «Начать оборону», чтобы поднять тревогу.",
+  };
+}
+
+function restoreDefenseGame(world, laneDefs) {
+  const saved = loadDefenseState();
+  if (!saved?.started) return createDefenseGame(world, laneDefs, false);
+  const fallback = createDefenseGame(world, laneDefs, true);
+  const lanes = { ...fallback.lanes };
+  Object.entries(saved.lanes ?? {}).forEach(([id, lane]) => {
+    lanes[id] = {
+      ...lanes[id],
+      ...lane,
+      cooldowns: { guard: 0, archer: 0, mage: 0, ...(lane.cooldowns ?? {}) },
+    };
+  });
+  return {
+    ...fallback,
+    ...saved,
+    lanes,
+    running: false,
+    paused: !saved.victory && !saved.gameOver,
+    frameId: 0,
+    last: performance.now(),
+    projectiles: [],
+    effects: [],
+    message: saved.victory || saved.gameOver ? saved.message : "Пауза: оборона восстановлена. Нажми «Продолжить».",
+  };
+}
+
+function loadDefenseState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DEFENSE_STORAGE_KEY) || "{}");
+    return saved && typeof saved === "object" ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDefenseState(game) {
+  try {
+    localStorage.setItem(DEFENSE_STORAGE_KEY, JSON.stringify({
+      started: Boolean(game.started),
+      paused: Boolean(game.paused || !game.running),
+      running: false,
+      waveRunning: Boolean(game.waveRunning),
+      victory: Boolean(game.victory),
+      gameOver: Boolean(game.gameOver),
+      wave: Number(game.wave || 0),
+      maxWaves: Number(game.maxWaves || 5),
+      supplies: Number(game.supplies || 0),
+      integrity: Number(game.integrity || 0),
+      defeated: Number(game.defeated || 0),
+      selectedLane: game.selectedLane || "north",
+      spawnQueue: game.spawnQueue ?? [],
+      spawnTimer: Number(game.spawnTimer || 0),
+      enemies: (game.enemies ?? []).map((enemy) => ({
+        id: enemy.id,
+        laneId: enemy.laneId,
+        type: enemy.type,
+        progress: Number(enemy.progress || 0),
+        hp: Number(enemy.hp || 0),
+        maxHp: Number(enemy.maxHp || 0),
+        speed: Number(enemy.speed || 0),
+        damage: Number(enemy.damage || 0),
+        reward: Number(enemy.reward || 0),
+        radius: Number(enemy.radius || 10),
+      })),
+      lanes: game.lanes,
+      time: Number(game.time || 0),
+      message: game.message || "",
+      savedAt: new Date().toISOString(),
+    }));
+  } catch (error) {
+    console.warn("Не удалось сохранить Оборону Миринки:", error.message);
+  }
+}
+
+function defenseLaneDefs(world) {
+  const center = { x: world.w / 2, y: world.h / 2 };
+  return [
+    { id: "north", title: "Северная дорога", start: { x: center.x, y: 24 }, end: { x: center.x, y: center.y - 43 }, color: "#6d876a" },
+    { id: "east", title: "Старый мост", start: { x: world.w - 30, y: center.y }, end: { x: center.x + 55, y: center.y }, color: "#4da9a7" },
+    { id: "south", title: "Заброшенные поля", start: { x: center.x, y: world.h - 26 }, end: { x: center.x, y: center.y + 50 }, color: "#b98d52" },
+    { id: "west", title: "Лесная кромка", start: { x: 30, y: center.y }, end: { x: center.x - 55, y: center.y }, color: "#527a58" },
+  ];
+}
+
+function defenseEnemyTypes() {
+  return {
+    bandit: { title: "Разбойник", hp: 34, speed: 0.065, damage: 7, reward: 2, radius: 10, color: "#8c5a34" },
+    cultist: { title: "Культист", hp: 26, speed: 0.085, damage: 5, reward: 2, radius: 9, color: "#6b2e58" },
+    firebug: { title: "Поджигатель", hp: 30, speed: 0.07, damage: 14, reward: 3, radius: 10, color: "#b54b38" },
+    brute: { title: "Одержимый", hp: 76, speed: 0.043, damage: 12, reward: 4, radius: 13, color: "#51615b" },
+    boss: { title: "Пепельный вожак", hp: 210, speed: 0.033, damage: 30, reward: 12, radius: 18, color: "#2b2420" },
+  };
+}
+
+function createDefenseWave(wave, laneDefs) {
+  const patterns = [
+    ["bandit", "bandit", "cultist", "bandit", "bandit"],
+    ["cultist", "bandit", "firebug", "bandit", "cultist", "bandit", "bandit"],
+    ["bandit", "firebug", "brute", "cultist", "firebug", "bandit", "brute"],
+    ["brute", "cultist", "firebug", "brute", "bandit", "firebug", "cultist", "brute"],
+    ["bandit", "cultist", "firebug", "brute", "firebug", "brute", "boss"],
+  ];
+  const lanes = laneDefs.map((lane) => lane.id);
+  return (patterns[wave] ?? patterns[patterns.length - 1]).map((type, index) => ({
+    type,
+    laneId: lanes[(index + wave) % lanes.length],
+  }));
+}
+
+function renderDefenseControls(game, laneDefs, laneRow, shopNode, actions) {
+  laneRow.innerHTML = "";
+  laneDefs.forEach((lane) => {
+    const laneState = game.lanes[lane.id];
+    const item = button("", `defense-lane-button ${game.selectedLane === lane.id ? "active" : ""}`, () => actions.selectLane(lane.id));
+    item.append(
+      el("strong", "", lane.title),
+      el("span", "", `С ${laneState.guard} · Л ${laneState.archer} · М ${laneState.mage} · Б ${laneState.barricade}`)
+    );
+    laneRow.append(item);
+  });
+
+  const selectedLane = laneDefs.find((lane) => lane.id === game.selectedLane) ?? laneDefs[0];
+  const costs = defenseCosts();
+  shopNode.innerHTML = "";
+  shopNode.append(el("div", "defense-shop-title", `${selectedLane.title} · запасы: ${game.supplies}`));
+  [
+    ["guard", "Стража", "держит центр"],
+    ["archer", "Лучники", "дальний урон"],
+    ["mage", "Маг", "удар по области"],
+    ["barricade", "Баррикада", "замедление"],
+  ].forEach(([type, title, hint]) => {
+    const buy = button("", "defense-buy-button", () => actions.buy(type));
+    buy.disabled = game.supplies < costs[type] || game.victory || game.gameOver || !game.started;
+    buy.append(el("strong", "", `${title} · ${costs[type]}`), el("span", "", hint));
+    shopNode.append(buy);
+  });
+}
+
+function defenseCosts() {
+  return { guard: 5, archer: 6, mage: 10, barricade: 4 };
+}
+
+function buyDefense(game, type) {
+  if (!game.started || game.victory || game.gameOver) return false;
+  const costs = defenseCosts();
+  const lane = game.lanes[game.selectedLane];
+  if (!lane || game.supplies < costs[type]) return false;
+  game.supplies -= costs[type];
+  lane[type] = (lane[type] ?? 0) + 1;
+  game.message = `${defenseBuyTitle(type)} усиливает ${defenseLaneName(game.selectedLane)}.`;
+  return true;
+}
+
+function defenseBuyTitle(type) {
+  return { guard: "Стража", archer: "Лучники", mage: "Маг", barricade: "Баррикада" }[type] ?? type;
+}
+
+function defenseLaneName(id) {
+  return { north: "север", east: "мост", south: "поля", west: "лесную кромку" }[id] ?? "дорогу";
+}
+
+function updateDefenseGame(game, laneDefs, world, dt) {
+  game.time += dt;
+  game.shake = Math.max(0, (game.shake ?? 0) - dt * 5);
+  updateDefenseParticles(game, dt);
+  if (!game.started || game.paused || game.gameOver || game.victory || !game.waveRunning) return;
+
+  game.spawnTimer -= dt;
+  if (game.spawnQueue.length && game.spawnTimer <= 0) {
+    const next = game.spawnQueue.shift();
+    game.enemies.push(createDefenseEnemy(next.type, next.laneId));
+    game.spawnTimer = Math.max(0.42, 0.92 - game.wave * 0.08);
+  }
+
+  game.enemies.forEach((enemy) => {
+    const lane = game.lanes[enemy.laneId];
+    const slow = Math.max(0.48, 1 - (lane?.barricade ?? 0) * 0.12);
+    enemy.progress += enemy.speed * slow * dt;
+  });
+  game.enemies = game.enemies.filter((enemy) => {
+    if (enemy.progress < 1) return true;
+    game.integrity = Math.max(0, game.integrity - enemy.damage);
+    game.shake = 1;
+    game.effects.push({ type: "hit", laneId: enemy.laneId, life: 0.5, t: 1 });
+    return false;
+  });
+
+  laneDefs.forEach((lane) => updateDefenseLaneCombat(game, lane, dt));
+  game.enemies = game.enemies.filter((enemy) => {
+    if (enemy.hp > 0) return true;
+    game.defeated += 1;
+    game.supplies += enemy.reward;
+    game.effects.push({ type: "defeat", laneId: enemy.laneId, progress: enemy.progress, life: 0.42, t: 1, color: defenseEnemyTypes()[enemy.type]?.color });
+    return false;
+  });
+
+  if (game.integrity <= 0) {
+    game.gameOver = true;
+    game.waveRunning = false;
+    game.message = `Миринка пала на ${game.wave + 1} волне.`;
+    saveDefenseState(game);
+    return;
+  }
+  if (!game.spawnQueue.length && !game.enemies.length) {
+    game.waveRunning = false;
+    game.wave += 1;
+    if (game.wave >= game.maxWaves) {
+      game.victory = true;
+      game.message = `Миринка выстояла. Целостность: ${Math.ceil(game.integrity)}.`;
+    } else {
+      game.supplies += 8 + game.wave * 2;
+      game.message = `Волна отбита. Миринка держится. Подготовься к волне ${game.wave + 1}.`;
+    }
+    saveDefenseState(game);
+  }
+}
+
+function createDefenseEnemy(type, laneId) {
+  const meta = defenseEnemyTypes()[type] ?? defenseEnemyTypes().bandit;
+  return {
+    id: crypto.randomUUID(),
+    laneId,
+    type,
+    progress: 0,
+    hp: meta.hp,
+    maxHp: meta.hp,
+    speed: meta.speed,
+    damage: meta.damage,
+    reward: meta.reward,
+    radius: meta.radius,
+  };
+}
+
+function updateDefenseLaneCombat(game, lane, dt) {
+  const laneState = game.lanes[lane.id];
+  if (!laneState) return;
+  laneState.cooldowns ??= { guard: 0, archer: 0, mage: 0 };
+  Object.keys(laneState.cooldowns).forEach((key) => {
+    laneState.cooldowns[key] = Math.max(0, laneState.cooldowns[key] - dt);
+  });
+  const laneEnemies = game.enemies.filter((enemy) => enemy.laneId === lane.id).sort((a, b) => b.progress - a.progress);
+  const target = laneEnemies[0];
+  if (!target) return;
+  if (laneState.guard > 0 && target.progress > 0.56 && laneState.cooldowns.guard <= 0) {
+    target.hp -= 13 * laneState.guard;
+    laneState.cooldowns.guard = 0.48;
+    game.effects.push({ type: "slash", laneId: lane.id, progress: target.progress, life: 0.18, t: 1 });
+  }
+  if (laneState.archer > 0 && laneState.cooldowns.archer <= 0) {
+    target.hp -= 9 * laneState.archer;
+    laneState.cooldowns.archer = 0.72;
+    game.projectiles.push({ laneId: lane.id, from: 0.62, to: target.progress, life: 0.28, t: 1, color: "#d4a74f" });
+  }
+  if (laneState.mage > 0 && laneState.cooldowns.mage <= 0) {
+    laneEnemies.filter((enemy) => Math.abs(enemy.progress - target.progress) < 0.18).forEach((enemy) => {
+      enemy.hp -= 17 * laneState.mage;
+    });
+    laneState.cooldowns.mage = 1.45;
+    game.effects.push({ type: "blast", laneId: lane.id, progress: target.progress, life: 0.36, t: 1, color: "#4da9a7" });
+  }
+}
+
+function updateDefenseParticles(game, dt) {
+  game.projectiles = (game.projectiles ?? []).filter((projectile) => {
+    projectile.life -= dt;
+    return projectile.life > 0;
+  });
+  game.effects = (game.effects ?? []).filter((effect) => {
+    effect.life -= dt;
+    return effect.life > 0;
+  });
+}
+
+function drawDefenseGame(ctx, game, laneDefs, world) {
+  const shakeX = game.shake ? (Math.random() - 0.5) * game.shake * 6 : 0;
+  const shakeY = game.shake ? (Math.random() - 0.5) * game.shake * 6 : 0;
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+  ctx.clearRect(-10, -10, world.w + 20, world.h + 20);
+  const bg = ctx.createLinearGradient(0, 0, world.w, world.h);
+  bg.addColorStop(0, "#111719");
+  bg.addColorStop(0.52, "#1f2925");
+  bg.addColorStop(1, "#2a2119");
+  ctx.fillStyle = bg;
+  ctx.fillRect(-10, -10, world.w + 20, world.h + 20);
+  drawDefenseRoads(ctx, laneDefs);
+  drawMirinkaVillage(ctx, world, game);
+  laneDefs.forEach((lane) => drawLaneDefenders(ctx, game, lane));
+  game.enemies.forEach((enemy) => drawDefenseEnemy(ctx, enemy, laneDefs));
+  game.projectiles.forEach((projectile) => drawDefenseProjectile(ctx, projectile, laneDefs));
+  game.effects.forEach((effect) => drawDefenseEffect(ctx, effect, laneDefs, world));
+  ctx.restore();
+  drawDefenseOverlay(ctx, game, world);
+}
+
+function drawDefenseRoads(ctx, laneDefs) {
+  laneDefs.forEach((lane) => {
+    const gradient = ctx.createLinearGradient(lane.start.x, lane.start.y, lane.end.x, lane.end.y);
+    gradient.addColorStop(0, "rgba(165, 126, 76, 0.36)");
+    gradient.addColorStop(1, "rgba(212, 167, 79, 0.68)");
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 30;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(lane.start.x, lane.start.y);
+    ctx.lineTo(lane.end.x, lane.end.y);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(20, 25, 24, 0.55)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+}
+
+function drawMirinkaVillage(ctx, world, game) {
+  const center = { x: world.w / 2, y: world.h / 2 };
+  ctx.save();
+  ctx.translate(center.x, center.y);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.26)";
+  ctx.beginPath();
+  ctx.ellipse(0, 18, 90, 44, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#5f4a2e";
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(-62, -56);
+  ctx.lineTo(62, -56);
+  ctx.quadraticCurveTo(78, -56, 78, -40);
+  ctx.lineTo(78, 40);
+  ctx.quadraticCurveTo(78, 56, 62, 56);
+  ctx.lineTo(-62, 56);
+  ctx.quadraticCurveTo(-78, 56, -78, 40);
+  ctx.lineTo(-78, -40);
+  ctx.quadraticCurveTo(-78, -56, -62, -56);
+  ctx.stroke();
+  const houses = [
+    [-35, -20, "#8c5a34"],
+    [20, -24, "#a0713f"],
+    [-8, 18, "#6c5135"],
+    [42, 20, "#7c6040"],
+  ];
+  houses.forEach(([x, y, color]) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(x - 13, y - 10, 26, 22);
+    ctx.fillStyle = "#2d2117";
+    ctx.beginPath();
+    ctx.moveTo(x - 17, y - 10);
+    ctx.lineTo(x, y - 25);
+    ctx.lineTo(x + 17, y - 10);
+    ctx.closePath();
+    ctx.fill();
+  });
+  ctx.fillStyle = "#d4a74f";
+  ctx.beginPath();
+  ctx.arc(0, -2, 6 + Math.sin(game.time * 5) * 1.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawLaneDefenders(ctx, game, lane) {
+  const laneState = game.lanes[lane.id];
+  if (!laneState) return;
+  for (let index = 0; index < laneState.barricade; index += 1) {
+    const p = defensePoint(lane, 0.36 + index * 0.04);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(Math.atan2(lane.end.y - lane.start.y, lane.end.x - lane.start.x) + Math.PI / 2);
+    ctx.strokeStyle = "#6b4b2d";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(-18, -5);
+    ctx.lineTo(18, 5);
+    ctx.moveTo(-18, 5);
+    ctx.lineTo(18, -5);
+    ctx.stroke();
+    ctx.restore();
+  }
+  drawDefenseUnitStack(ctx, lane, 0.72, laneState.guard, "#c8bda4", "С");
+  drawDefenseUnitStack(ctx, lane, 0.60, laneState.archer, "#d4a74f", "Л");
+  drawDefenseUnitStack(ctx, lane, 0.49, laneState.mage, "#4da9a7", "М");
+}
+
+function drawDefenseUnitStack(ctx, lane, progress, count, color, label) {
+  for (let index = 0; index < count; index += 1) {
+    const p = defensePoint(lane, progress - index * 0.025);
+    ctx.save();
+    ctx.translate(p.x + (index % 2 ? 9 : -9), p.y + (index % 3 - 1) * 5);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+    ctx.beginPath();
+    ctx.ellipse(0, 8, 12, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#111719";
+    ctx.font = "800 8px Inter, Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  }
+}
+
+function drawDefenseEnemy(ctx, enemy, laneDefs) {
+  const lane = laneDefs.find((item) => item.id === enemy.laneId);
+  if (!lane) return;
+  const meta = defenseEnemyTypes()[enemy.type] ?? defenseEnemyTypes().bandit;
+  const p = defensePoint(lane, enemy.progress);
+  const pulse = Math.sin((enemy.progress * 20 + performance.now() / 120)) * 2;
+  ctx.save();
+  ctx.translate(p.x, p.y + pulse);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.34)";
+  ctx.beginPath();
+  ctx.ellipse(0, enemy.radius + 5, enemy.radius + 6, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = meta.color;
+  ctx.beginPath();
+  ctx.arc(0, 0, enemy.radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = enemy.type === "boss" ? "#d4a74f" : "rgba(242, 229, 201, 0.45)";
+  ctx.lineWidth = enemy.type === "boss" ? 3 : 1.5;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.68)";
+  ctx.fillRect(-16, -enemy.radius - 12, 32, 4);
+  ctx.fillStyle = "#b54b38";
+  ctx.fillRect(-16, -enemy.radius - 12, 32 * clamp(enemy.hp / enemy.maxHp, 0, 1), 4);
+  ctx.restore();
+}
+
+function drawDefenseProjectile(ctx, projectile, laneDefs) {
+  const lane = laneDefs.find((item) => item.id === projectile.laneId);
+  if (!lane) return;
+  const t = 1 - projectile.life / 0.28;
+  const from = defensePoint(lane, projectile.from);
+  const to = defensePoint(lane, projectile.to);
+  const x = from.x + (to.x - from.x) * t;
+  const y = from.y + (to.y - from.y) * t - Math.sin(t * Math.PI) * 20;
+  ctx.fillStyle = projectile.color || "#d4a74f";
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawDefenseEffect(ctx, effect, laneDefs, world) {
+  const lane = laneDefs.find((item) => item.id === effect.laneId);
+  const p = lane ? defensePoint(lane, effect.progress ?? 0.96) : { x: world.w / 2, y: world.h / 2 };
+  const alpha = clamp(effect.life / (effect.t || 1), 0, 1);
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  if (effect.type === "blast") {
+    ctx.strokeStyle = `rgba(77, 169, 167, ${alpha})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, 34 * (1 - alpha + 0.3), 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (effect.type === "slash") {
+    ctx.strokeStyle = `rgba(242, 229, 201, ${alpha})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-14, -8);
+    ctx.lineTo(14, 8);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = `rgba(181, 75, 56, ${alpha * 0.45})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, 24 * (1 - alpha + 0.2), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawDefenseOverlay(ctx, game, world) {
+  if (!game.started || game.paused || game.gameOver || game.victory) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.38)";
+    ctx.fillRect(0, 0, world.w, world.h);
+    ctx.fillStyle = "#f2e5c9";
+    ctx.font = "800 32px Inter, Arial";
+    ctx.textAlign = "center";
+    const title = game.victory ? "Миринка выстояла" : game.gameOver ? "Миринка пала" : game.started ? "Пауза обороны" : "Миринка ждет приказа";
+    ctx.fillText(title, world.w / 2, world.h / 2 - 10);
+    ctx.fillStyle = "#d4a74f";
+    ctx.font = "700 17px Inter, Arial";
+    const hint = game.victory || game.gameOver ? "Нажми «Начать заново»" : game.started ? "Esc или «Продолжить»" : "Нажми «Начать оборону»";
+    ctx.fillText(hint, world.w / 2, world.h / 2 + 24);
+  }
+}
+
+function defensePoint(lane, progress) {
+  return {
+    x: lane.start.x + (lane.end.x - lane.start.x) * progress,
+    y: lane.start.y + (lane.end.y - lane.start.y) * progress,
+  };
+}
+
+function nearestDefenseLane(point, laneDefs) {
+  const ranked = laneDefs
+    .map((lane) => [lane.id, distanceToSegment(point, lane.start, lane.end)])
+    .sort((a, b) => a[1] - b[1]);
+  return ranked[0]?.[1] < 42 ? ranked[0][0] : "";
+}
+
+function distanceToSegment(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSq = dx * dx + dy * dy || 1;
+  const t = clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSq, 0, 1);
+  const x = start.x + dx * t;
+  const y = start.y + dy * t;
+  return Math.hypot(point.x - x, point.y - y);
+}
+
+function updateDefenseHud(scoreNode, statusNode, game) {
+  if (!scoreNode || !statusNode) return;
+  scoreNode.innerHTML = "";
+  scoreNode.append(
+    el("strong", "", `${Math.ceil(game.integrity)}%`),
+    el("span", "", `волна ${Math.min(game.wave + 1, game.maxWaves)} / ${game.maxWaves} · запасы ${game.supplies} · врагов ${game.defeated}`)
+  );
+  statusNode.textContent = game.message;
 }
 
 function startHereticRun(canvas, scoreNode, statusNode, options = {}) {
