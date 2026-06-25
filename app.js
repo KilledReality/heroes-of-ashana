@@ -6128,6 +6128,38 @@ function renderMinigame() {
 
 const minigameTouchKeys = new Set();
 
+function minigameKeyAction(event) {
+  const codeMap = {
+    ArrowUp: "up",
+    ArrowDown: "down",
+    ArrowLeft: "left",
+    ArrowRight: "right",
+    KeyW: "up",
+    KeyS: "down",
+    KeyA: "left",
+    KeyD: "right",
+    Space: "dash",
+  };
+  if (codeMap[event.code]) return codeMap[event.code];
+  const key = String(event.key || "").toLowerCase();
+  return {
+    arrowup: "up",
+    arrowdown: "down",
+    arrowleft: "left",
+    arrowright: "right",
+    w: "up",
+    ц: "up",
+    s: "down",
+    ы: "down",
+    a: "left",
+    ф: "left",
+    d: "right",
+    в: "right",
+    " ": "dash",
+    spacebar: "dash",
+  }[key] || "";
+}
+
 function startHereticRun(canvas, scoreNode, statusNode, options = {}) {
   const ctx = canvas.getContext("2d");
   const keys = new Set();
@@ -6158,10 +6190,18 @@ function startHereticRun(canvas, scoreNode, statusNode, options = {}) {
   let game = createGame(false);
 
   const down = (event) => {
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Spacebar"].includes(event.key)) event.preventDefault();
-    keys.add(event.key.toLowerCase());
+    const action = minigameKeyAction(event);
+    if (!action) return;
+    event.preventDefault();
+    keys.add(action);
+    if (action === "dash" && !event.repeat && game.started && !game.paused && !game.gameOver) {
+      game.message = game.dashReady <= 0 ? "Рывок!" : game.message;
+    }
   };
-  const up = (event) => keys.delete(event.key.toLowerCase());
+  const up = (event) => {
+    const action = minigameKeyAction(event);
+    if (action) keys.delete(action);
+  };
   window.addEventListener("keydown", down);
   window.addEventListener("keyup", up);
 
@@ -6256,11 +6296,11 @@ function updateHereticRun(game, keys, world, dt, scoreNode, statusNode) {
 
   const player = game.player;
   const input = {
-    x: Number(keys.has("d") || keys.has("arrowright") || minigameTouchKeys.has("right")) - Number(keys.has("a") || keys.has("arrowleft") || minigameTouchKeys.has("left")),
-    y: Number(keys.has("s") || keys.has("arrowdown") || minigameTouchKeys.has("down")) - Number(keys.has("w") || keys.has("arrowup") || minigameTouchKeys.has("up")),
+    x: Number(keys.has("right") || minigameTouchKeys.has("right")) - Number(keys.has("left") || minigameTouchKeys.has("left")),
+    y: Number(keys.has("down") || minigameTouchKeys.has("down")) - Number(keys.has("up") || minigameTouchKeys.has("up")),
   };
   const length = Math.hypot(input.x, input.y) || 1;
-  const dash = (keys.has(" ") || minigameTouchKeys.has("dash")) && game.dashReady <= 0;
+  const dash = (keys.has("dash") || minigameTouchKeys.has("dash")) && game.dashReady <= 0;
   const speed = dash ? 430 : 215;
   if (dash) {
     game.dashReady = 1.4;
