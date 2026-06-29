@@ -752,6 +752,7 @@ let mapPanelScroll = { atlas: 0, inspector: 0 };
 let mapViewByRegion = {};
 let activeMapElements = null;
 let mapUiSaveTimer = null;
+let pendingMapMountRestore = null;
 let mapBrushTerrain = "лес";
 let mapBrushTerrains = ["лес"];
 let mapBrushEnabled = false;
@@ -2129,7 +2130,12 @@ function render() {
   }
   viewRoot.innerHTML = "";
   if (currentView !== "map") activeMapElements = null;
-  viewRoot.append(viewMap[currentView]());
+  pendingMapMountRestore = null;
+  const nextView = viewMap[currentView]();
+  viewRoot.append(nextView);
+  const restoreMountedMap = pendingMapMountRestore;
+  pendingMapMountRestore = null;
+  restoreMountedMap?.();
   scrollWikiArticleToTop();
   saveUiState();
 }
@@ -2828,10 +2834,11 @@ function renderMap() {
   layout.append(atlas, stage, panel);
   root.append(layout);
   activeMapElements = { regionId: region.id, stage, atlas, inspector: panel, restoring: true };
-  restoreMapScroll(stage, atlas, panel, layout, savedView, () => {
+  pendingMapMountRestore = () => {
+    restoreMapScroll(stage, atlas, panel, layout, savedView);
     restoring = false;
     if (activeMapElements?.regionId === region.id) activeMapElements.restoring = false;
-  });
+  };
   return root;
 }
 
@@ -3029,30 +3036,13 @@ function openQuest(questId) {
   setView("quests");
 }
 
-function restoreMapScroll(stage, atlas, inspector, layout, savedView, onComplete) {
+function restoreMapScroll(stage, atlas, inspector, layout, savedView) {
   const target = normalizeMapViewEntry(savedView);
-  const restore = () => {
-    stage.scrollLeft = target.map.left;
-    stage.scrollTop = target.map.top;
-    if (atlas) atlas.scrollTop = target.panels.atlas;
-    if (inspector) inspector.scrollTop = target.panels.inspector;
-  };
-  if (typeof requestAnimationFrame === "function") {
-    requestAnimationFrame(() => {
-      restore();
-      requestAnimationFrame(() => {
-        restore();
-        layout?.classList.remove("is-restoring-scroll");
-        onComplete?.();
-      });
-    });
-  } else {
-    setTimeout(() => {
-      restore();
-      layout?.classList.remove("is-restoring-scroll");
-      onComplete?.();
-    }, 0);
-  }
+  stage.scrollLeft = target.map.left;
+  stage.scrollTop = target.map.top;
+  if (atlas) atlas.scrollTop = target.panels.atlas;
+  if (inspector) inspector.scrollTop = target.panels.inspector;
+  layout?.classList.remove("is-restoring-scroll");
 }
 
 function mapZoomControls() {
