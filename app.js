@@ -749,6 +749,9 @@ let activeGalleryTag = "";
 let mapZoom = state.map.zoom || 1;
 let mapScroll = { left: 0, top: 0 };
 let mapPanelScroll = { atlas: 0, inspector: 0 };
+let mapViewByRegion = {};
+let activeMapElements = null;
+let mapUiSaveTimer = null;
 let mapBrushTerrain = "лес";
 let mapBrushTerrains = ["лес"];
 let mapBrushEnabled = false;
@@ -795,8 +798,15 @@ mapBrushBoundarySides = normalizeBoundarySides(savedUiState.mapBrushBoundarySide
 mapZoom = Number(savedUiState.mapZoom || mapZoom);
 mapScroll = savedUiState.mapScroll || mapScroll;
 mapPanelScroll = savedUiState.mapPanelScroll || mapPanelScroll;
+mapViewByRegion = normalizeMapViewByRegion(savedUiState.mapViewByRegion);
 if (savedUiState.mapActiveRegionId) state.map.activeRegionId = savedUiState.mapActiveRegionId;
 if (savedUiState.mapSelectedHex) state.map.selectedHex = savedUiState.mapSelectedHex;
+const initialMapView = mapViewByRegion[state.map.activeRegionId];
+if (initialMapView) {
+  mapZoom = initialMapView.zoom;
+  mapScroll = { ...initialMapView.map };
+  mapPanelScroll = { ...initialMapView.panels };
+}
 
 const viewRoot = document.querySelector("#viewRoot");
 const navItems = document.querySelectorAll(".nav-item");
@@ -859,6 +869,7 @@ function saveUiState() {
       mapZoom,
       mapScroll,
       mapPanelScroll,
+      mapViewByRegion,
       mapBrushTerrain,
       mapBrushTerrains,
       mapBrushEnabled,
@@ -872,6 +883,87 @@ function saveUiState() {
   } catch (error) {
     console.warn("Не удалось сохранить положение интерфейса:", error.message);
   }
+}
+
+function finiteScrollValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, number) : 0;
+}
+
+function normalizeMapViewEntry(entry = {}) {
+  const zoom = Number(entry.zoom);
+  return {
+    zoom: Number.isFinite(zoom) ? Math.max(0.45, Math.min(2.8, zoom)) : 1,
+    map: {
+      left: finiteScrollValue(entry.map?.left),
+      top: finiteScrollValue(entry.map?.top),
+    },
+    panels: {
+      atlas: finiteScrollValue(entry.panels?.atlas),
+      inspector: finiteScrollValue(entry.panels?.inspector),
+    },
+    selectedHex: typeof entry.selectedHex === "string" ? entry.selectedHex : "0,0",
+  };
+}
+
+function normalizeMapViewByRegion(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).map(([regionId, entry]) => [regionId, normalizeMapViewEntry(entry)])
+  );
+}
+
+function mapViewForRegion(regionId) {
+  if (!mapViewByRegion[regionId]) {
+    const isActiveRegion = state.map.activeRegionId === regionId;
+    mapViewByRegion[regionId] = normalizeMapViewEntry({
+      zoom: Number(state.map.zoom || mapZoom || 1),
+      map: isActiveRegion ? mapScroll : { left: 0, top: 0 },
+      panels: isActiveRegion ? mapPanelScroll : { atlas: 0, inspector: 0 },
+      selectedHex: isActiveRegion ? state.map.selectedHex : "0,0",
+    });
+  }
+  return mapViewByRegion[regionId];
+}
+
+function scheduleMapUiSave() {
+  clearTimeout(mapUiSaveTimer);
+  mapUiSaveTimer = setTimeout(() => {
+    mapUiSaveTimer = null;
+    saveUiState();
+  }, 120);
+}
+
+function updateMapView(regionId, changes = {}, persist = false) {
+  if (!regionId) return;
+  const current = mapViewForRegion(regionId);
+  const next = normalizeMapViewEntry({
+    ...current,
+    ...changes,
+    map: { ...current.map, ...(changes.map ?? {}) },
+    panels: { ...current.panels, ...(changes.panels ?? {}) },
+  });
+  mapViewByRegion[regionId] = next;
+  if (state.map.activeRegionId === regionId) {
+    mapZoom = next.zoom;
+    mapScroll = { ...next.map };
+    mapPanelScroll = { ...next.panels };
+  }
+  if (persist) scheduleMapUiSave();
+}
+
+function captureActiveMapViewport(persist = false) {
+  const elements = activeMapElements;
+  if (!elements || elements.restoring || !elements.stage?.isConnected) return;
+  updateMapView(elements.regionId, {
+    zoom: mapZoom,
+    map: { left: elements.stage.scrollLeft, top: elements.stage.scrollTop },
+    panels: {
+      atlas: elements.atlas?.scrollTop ?? 0,
+      inspector: elements.inspector?.scrollTop ?? 0,
+    },
+    selectedHex: state.map.selectedHex,
+  }, persist);
 }
 
 function isKnownView(view) {
@@ -1620,6 +1712,14 @@ async function loadCloudState() {
   mapZoom = Number(uiState.mapZoom || state.map.zoom || 1);
   mapScroll = uiState.mapScroll || mapScroll;
   mapPanelScroll = uiState.mapPanelScroll || mapPanelScroll;
+  mapViewByRegion = normalizeMapViewByRegion(uiState.mapViewByRegion);
+  const restoredMapView = mapViewByRegion[state.map.activeRegionId];
+  if (restoredMapView) {
+    mapZoom = restoredMapView.zoom;
+    mapScroll = { ...restoredMapView.map };
+    mapPanelScroll = { ...restoredMapView.panels };
+    state.map.selectedHex = restoredMapView.selectedHex || state.map.selectedHex;
+  }
   await loadCloudRolls();
   renderCharacterSelect();
   render();
@@ -1887,7 +1987,10 @@ function visibleSessionLogs() {
 
 function setView(view, options = {}) {
   if (!options.skipWikiGuard && view !== currentView && !confirmWikiEditorLeave()) return false;
-  if (currentView === "map") state.map.zoom = mapZoom;
+  if (currentView === "map") {
+    captureActiveMapViewport(true);
+    state.map.zoom = mapZoom;
+  }
   currentView = view;
   navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   render();
@@ -2018,12 +2121,14 @@ function render() {
   };
 
   if (!viewMap[currentView]) currentView = "dashboard";
+  if (currentView === "map") captureActiveMapViewport();
   navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === currentView));
   if (activeMinigameCleanup) {
     activeMinigameCleanup();
     activeMinigameCleanup = null;
   }
   viewRoot.innerHTML = "";
+  if (currentView !== "map") activeMapElements = null;
   viewRoot.append(viewMap[currentView]());
   scrollWikiArticleToTop();
   saveUiState();
@@ -2627,10 +2732,13 @@ function ensureActiveMapRegion() {
 function selectMapRegion(regionId) {
   const region = visibleMapRegions().find((item) => item.id === regionId);
   if (!region) return;
+  captureActiveMapViewport(true);
   state.map.activeRegionId = region.id;
-  state.map.selectedHex = "0,0";
-  mapScroll = { left: 0, top: 0 };
-  mapPanelScroll = { atlas: 0, inspector: 0 };
+  const targetView = mapViewForRegion(region.id);
+  state.map.selectedHex = targetView.selectedHex;
+  mapZoom = targetView.zoom;
+  mapScroll = { ...targetView.map };
+  mapPanelScroll = { ...targetView.panels };
   saveState();
   render();
 }
@@ -2661,13 +2769,17 @@ function createMapRegion() {
   state.map.selectedHex = "0,0";
   mapScroll = { left: 0, top: 0 };
   mapPanelScroll = { atlas: 0, inspector: 0 };
+  mapViewByRegion[region.id] = normalizeMapViewEntry({
+    zoom: 1,
+    map: mapScroll,
+    panels: mapPanelScroll,
+    selectedHex: "0,0",
+  });
   saveState();
   render();
 }
 
 function renderMap() {
-  mapZoom = Number(state.map.zoom || mapZoom || 1);
-  if (!Number.isFinite(mapZoom)) mapZoom = 1;
   const root = el("div");
   const action = isAdmin ? button("Новая карта", "primary-button", () => createMapRegion()) : null;
   root.append(header("Карта", "Атлас кампании: общая карта, поселения, подземелья и скрытые мастерские слои.", action));
@@ -2677,13 +2789,20 @@ function renderMap() {
     root.append(el("div", "empty-state", "Публичных карт пока нет."));
     return root;
   }
+  const savedView = mapViewForRegion(region.id);
+  mapZoom = savedView.zoom;
+  mapScroll = { ...savedView.map };
+  mapPanelScroll = { ...savedView.panels };
+  state.map.zoom = mapZoom;
   const selected = getHex(region, state.map.selectedHex);
   const layout = el("div", "map-layout");
   layout.classList.add("is-restoring-scroll");
   const atlas = mapAtlasPanel(region);
   const stage = el("section", "hex-map-stage");
+  let restoring = true;
   stage.addEventListener("scroll", () => {
-    mapScroll = { left: stage.scrollLeft, top: stage.scrollTop };
+    if (restoring) return;
+    updateMapView(region.id, { map: { left: stage.scrollLeft, top: stage.scrollTop } }, true);
   });
   const viewport = el("div", "hex-map-viewport");
   const size = mapPixelSize(region);
@@ -2698,15 +2817,21 @@ function renderMap() {
 
   const panel = mapInspector(region, selected);
   atlas.addEventListener("scroll", () => {
-    mapPanelScroll.atlas = atlas.scrollTop;
+    if (restoring) return;
+    updateMapView(region.id, { panels: { atlas: atlas.scrollTop } }, true);
   });
   panel.addEventListener("scroll", () => {
-    mapPanelScroll.inspector = panel.scrollTop;
+    if (restoring) return;
+    updateMapView(region.id, { panels: { inspector: panel.scrollTop } }, true);
   });
 
   layout.append(atlas, stage, panel);
   root.append(layout);
-  restoreMapScroll(stage, atlas, panel, layout);
+  activeMapElements = { regionId: region.id, stage, atlas, inspector: panel, restoring: true };
+  restoreMapScroll(stage, atlas, panel, layout, savedView, () => {
+    restoring = false;
+    if (activeMapElements?.regionId === region.id) activeMapElements.restoring = false;
+  });
   return root;
 }
 
@@ -2904,23 +3029,28 @@ function openQuest(questId) {
   setView("quests");
 }
 
-function restoreMapScroll(stage, atlas, inspector, layout) {
+function restoreMapScroll(stage, atlas, inspector, layout, savedView, onComplete) {
+  const target = normalizeMapViewEntry(savedView);
   const restore = () => {
-    stage.scrollLeft = mapScroll.left;
-    stage.scrollTop = mapScroll.top;
-    if (atlas) atlas.scrollTop = mapPanelScroll.atlas;
-    if (inspector) inspector.scrollTop = mapPanelScroll.inspector;
+    stage.scrollLeft = target.map.left;
+    stage.scrollTop = target.map.top;
+    if (atlas) atlas.scrollTop = target.panels.atlas;
+    if (inspector) inspector.scrollTop = target.panels.inspector;
   };
-  restore();
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(() => {
       restore();
-      layout?.classList.remove("is-restoring-scroll");
+      requestAnimationFrame(() => {
+        restore();
+        layout?.classList.remove("is-restoring-scroll");
+        onComplete?.();
+      });
     });
   } else {
     setTimeout(() => {
       restore();
       layout?.classList.remove("is-restoring-scroll");
+      onComplete?.();
     }, 0);
   }
 }
@@ -2937,8 +3067,10 @@ function mapZoomControls() {
 }
 
 function setMapZoom(value) {
+  captureActiveMapViewport();
   mapZoom = Math.max(0.45, Math.min(2.8, value));
   state.map.zoom = mapZoom;
+  updateMapView(state.map.activeRegionId, { zoom: mapZoom });
   saveState();
   render();
 }
@@ -3019,6 +3151,7 @@ function hexGrid(region) {
           }
         }
         state.map.selectedHex = key;
+        updateMapView(region.id, { selectedHex: key });
         saveState();
         render();
       });
@@ -3580,11 +3713,14 @@ function deleteMapRegion(region) {
   }
   if (!confirm(`Удалить карту "${region.title}"? Это удалит все ячейки и заметки этой карты.`)) return;
   state.map.regions = state.map.regions.filter((item) => item.id !== region.id);
+  delete mapViewByRegion[region.id];
   const nextRegion = visibleMapRegions()[0] ?? state.map.regions[0];
   state.map.activeRegionId = nextRegion?.id ?? "";
-  state.map.selectedHex = "0,0";
-  mapScroll = { left: 0, top: 0 };
-  mapPanelScroll = { atlas: 0, inspector: 0 };
+  const nextView = nextRegion ? mapViewForRegion(nextRegion.id) : normalizeMapViewEntry();
+  state.map.selectedHex = nextView.selectedHex;
+  mapZoom = nextView.zoom;
+  mapScroll = { ...nextView.map };
+  mapPanelScroll = { ...nextView.panels };
   saveState();
   render();
 }
@@ -9402,9 +9538,20 @@ quickLoginButton.addEventListener("click", () => {
 });
 cancelLogin.addEventListener("click", () => loginDialog.close());
 window.addEventListener("beforeunload", (event) => {
+  captureActiveMapViewport();
+  saveUiState();
   if (!hasUnsavedWikiDraft()) return;
   event.preventDefault();
   event.returnValue = "";
+});
+window.addEventListener("pagehide", () => {
+  captureActiveMapViewport();
+  saveUiState();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "hidden") return;
+  captureActiveMapViewport();
+  saveUiState();
 });
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
