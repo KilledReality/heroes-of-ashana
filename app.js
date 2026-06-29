@@ -1437,6 +1437,7 @@ async function saveCloudState() {
 
 async function loadCloudState() {
   if (!supabaseClient) return false;
+  const uiState = loadUiState();
   const { data, error } = await supabaseClient.from("campaign_state").select("data").eq("id", "main").single();
   if (error) {
     cloudStatus = `Ошибка загрузки облака: ${error.message}`;
@@ -1462,11 +1463,12 @@ async function loadCloudState() {
     activeWikiId = WIKI_INDEX_ID;
     activeWikiCategoryId = "";
   }
-  if (savedUiState.mapActiveRegionId && state.map.regions.some((region) => region.id === savedUiState.mapActiveRegionId)) {
-    state.map.activeRegionId = savedUiState.mapActiveRegionId;
+  if (uiState.mapActiveRegionId && state.map.regions.some((region) => region.id === uiState.mapActiveRegionId)) {
+    state.map.activeRegionId = uiState.mapActiveRegionId;
   }
-  if (savedUiState.mapSelectedHex) state.map.selectedHex = savedUiState.mapSelectedHex;
-  mapZoom = Number(savedUiState.mapZoom || state.map.zoom || 1);
+  if (uiState.mapSelectedHex) state.map.selectedHex = uiState.mapSelectedHex;
+  mapZoom = Number(uiState.mapZoom || state.map.zoom || 1);
+  mapScroll = uiState.mapScroll || mapScroll;
   await loadCloudRolls();
   renderCharacterSelect();
   render();
@@ -1731,6 +1733,7 @@ function visibleSessionLogs() {
 
 function setView(view, options = {}) {
   if (!options.skipWikiGuard && view !== currentView && !confirmWikiEditorLeave()) return false;
+  if (currentView === "map") state.map.zoom = mapZoom;
   currentView = view;
   navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   render();
@@ -2503,6 +2506,8 @@ function createMapRegion() {
 }
 
 function renderMap() {
+  mapZoom = Number(state.map.zoom || mapZoom || 1);
+  if (!Number.isFinite(mapZoom)) mapZoom = 1;
   const root = el("div");
   const action = isAdmin ? button("Новая карта", "primary-button", () => createMapRegion()) : null;
   root.append(header("Карта", "Атлас кампании: общая карта, поселения, подземелья и скрытые мастерские слои.", action));
@@ -2832,18 +2837,20 @@ function hexGrid(region) {
       hex.style.height = `${hexHeight}px`;
       hex.style.left = `${offsetX + q * hexSize * 0.75}px`;
       hex.style.top = `${offsetY + r * hexHeight + (q % 2) * (hexHeight / 2)}px`;
-      if (data?.terrain) hex.dataset.terrain = data.terrain;
+      const surface = el("div", "hex-surface");
+      if (data?.terrain) surface.dataset.terrain = data.terrain;
       const terrainImage = terrainTileFiles[data?.terrain];
       const tileSource = data?.tileImage || terrainImage;
-      if (terrainImage && !data?.tileImage) hex.classList.add("has-terrain-art");
+      if (terrainImage && !data?.tileImage) surface.classList.add("has-terrain-art");
       if (tileSource) {
         const img = document.createElement("img");
         img.src = tileSource;
         img.alt = data.title || key;
         img.style.objectFit = data?.tileFit || "cover";
         if (terrainImage && !data?.tileImage) img.className = "terrain-tile-art";
-        hex.append(img);
+        surface.append(img);
       }
+      hex.append(surface);
       if (data?.boundaryStyle && data.boundaryStyle !== "none") hex.append(hexBoundaryOverlay(data, key));
       if (objectCount || linkCount) hex.append(el("span", "hex-label", String(objectCount + linkCount)));
       grid.append(hex);
@@ -2956,7 +2963,7 @@ function hexBoundaryOverlay(data, key) {
   svg.setAttribute("preserveAspectRatio", "none");
   svg.classList.add("hex-boundary", `boundary-${data.boundaryStyle}`);
   svg.setAttribute("aria-hidden", "true");
-  const points = "25,2 75,2 98,43.3 75,84.6 25,84.6 2,43.3";
+  const points = "25,0 75,0 100,43.3 75,86.6 25,86.6 0,43.3";
   const color = /^#[0-9a-f]{6}$/i.test(data.boundaryColor || "") ? data.boundaryColor : "#d4a74f";
   const polygon = (className, stroke = color) => {
     const shape = document.createElementNS(ns, "polygon");
@@ -2964,6 +2971,8 @@ function hexBoundaryOverlay(data, key) {
     shape.setAttribute("fill", "none");
     shape.setAttribute("stroke", stroke);
     shape.setAttribute("vector-effect", "non-scaling-stroke");
+    shape.setAttribute("stroke-linejoin", "round");
+    shape.setAttribute("stroke-linecap", "round");
     shape.classList.add(className);
     return shape;
   };

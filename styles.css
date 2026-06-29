@@ -1747,15 +1747,22 @@ label {
   display: grid;
   place-items: center;
   color: #fff;
+  font-weight: 900;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  background: transparent;
+  border: 0;
+}
+
+.hex-surface {
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   background: #262b2b;
   border: 1px solid rgba(0, 0, 0, 0.5);
   clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
-  font-weight: 900;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 
-.hex-cell img {
+.hex-surface img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1763,7 +1770,7 @@ label {
   z-index: 1;
 }
 
-.hex-cell img.terrain-tile-art {
+.hex-surface img.terrain-tile-art {
   width: 124%;
   height: 124%;
   left: -12%;
@@ -1773,10 +1780,10 @@ label {
 
 .hex-boundary {
   position: absolute;
-  inset: 0;
+  inset: -2px;
   z-index: 3;
-  width: 100%;
-  height: 100%;
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
   overflow: visible;
   pointer-events: none;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.8));
@@ -1785,50 +1792,50 @@ label {
 .boundary-stroke,
 .boundary-double-outer,
 .boundary-double-inner {
-  stroke-width: 5;
+  stroke-width: 3;
 }
 
 .boundary-dashed .boundary-stroke {
-  stroke-width: 5;
-  stroke-dasharray: 10 6;
+  stroke-width: 3;
+  stroke-dasharray: 7 5;
 }
 
 .boundary-double-inner {
-  stroke-width: 2.5;
+  stroke-width: 1.5;
 }
 
 .boundary-wall-base {
-  stroke-width: 10;
+  stroke-width: 6;
 }
 
 .boundary-wall-top {
-  stroke-width: 5;
-  stroke-dasharray: 11 3;
+  stroke-width: 3;
+  stroke-dasharray: 8 3;
 }
 
 .boundary-trap-base {
-  stroke-width: 6;
+  stroke-width: 3;
 }
 
 .boundary-trap-marks {
-  stroke-width: 6;
-  stroke-dasharray: 1 11;
+  stroke-width: 3;
+  stroke-dasharray: 1 9;
   stroke-linecap: round;
 }
 
 .boundary-rune-glow {
-  stroke-width: 8;
-  opacity: 0.28;
-  filter: blur(2px);
+  stroke-width: 5;
+  opacity: 0.24;
+  filter: blur(1.5px);
 }
 
 .boundary-rune-marks {
-  stroke-width: 3;
-  stroke-dasharray: 4 7 1 5;
+  stroke-width: 2;
+  stroke-dasharray: 3 6 1 4;
 }
 
 .boundary-custom-stroke {
-  stroke-width: 10;
+  stroke-width: 6;
 }
 
 .hex-label {
@@ -1842,63 +1849,63 @@ label {
   background: rgba(0, 0, 0, 0.45);
 }
 
-.hex-cell:hover {
+.hex-cell:hover .hex-surface {
   background: rgba(212, 167, 79, 0.22);
   border-color: rgba(212, 167, 79, 0.8);
 }
 
-.hex-cell.selected {
+.hex-cell.selected .hex-surface {
   background: rgba(77, 169, 167, 0.34);
   border: 3px solid var(--accent-2);
   z-index: 3;
 }
 
-.hex-cell[data-terrain="город"],
-.hex-cell[data-terrain="деревня"] {
+.hex-surface[data-terrain="город"],
+.hex-surface[data-terrain="деревня"] {
   background:
     radial-gradient(circle at 50% 50%, rgba(255, 238, 190, 0.28), transparent 32%),
     #8e744c;
 }
 
-.hex-cell[data-terrain="опасность"] {
+.hex-surface[data-terrain="опасность"] {
   background: #71352f;
 }
 
-.hex-cell[data-terrain="вода"],
-.hex-cell[data-terrain="болото"] {
+.hex-surface[data-terrain="вода"],
+.hex-surface[data-terrain="болото"] {
   background: #477d80;
 }
 
-.hex-cell[data-terrain="лес"] {
+.hex-surface[data-terrain="лес"] {
   background:
     radial-gradient(circle at 28% 32%, #335a30 0 12%, transparent 13%),
     radial-gradient(circle at 58% 58%, #406c37 0 14%, transparent 15%),
     #27492c;
 }
 
-.hex-cell[data-terrain="равнина"] {
+.hex-surface[data-terrain="равнина"] {
   background: #8f9a58;
 }
 
-.hex-cell[data-terrain="горы"] {
+.hex-surface[data-terrain="горы"] {
   background:
     linear-gradient(135deg, transparent 35%, rgba(255,255,255,.2) 36% 42%, transparent 43%),
     #6f7470;
 }
 
-.hex-cell[data-terrain="дорога"] {
+.hex-surface[data-terrain="дорога"] {
   background:
     linear-gradient(25deg, transparent 42%, #b49455 43% 55%, transparent 56%),
     #536c3d;
 }
 
-.hex-cell[data-terrain="укрепление"] {
+.hex-surface[data-terrain="укрепление"] {
   background:
     repeating-linear-gradient(45deg, rgba(255,255,255,.15) 0 6px, transparent 6px 12px),
     #65645c;
 }
 
-.hex-cell[data-terrain="подземелье"] {
+.hex-surface[data-terrain="подземелье"] {
   background: #37333c;
 }
 
