@@ -1689,6 +1689,11 @@ label {
   flex: 0 0 auto;
 }
 
+.hex-side-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-height: none;
+}
+
 .hex-map-stage {
   position: relative;
   overflow: auto;
@@ -1957,12 +1962,24 @@ label {
   width: 128px;
   height: 112px;
   margin-top: 8px;
-  overflow: hidden;
-  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
-  background: #262b2b;
+  overflow: visible;
+  background: transparent;
 }
 
-.boundary-editor-preview .hex-boundary {
+.hex-preview-stack {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.preview-surface {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.15)),
+    #262b2b;
+}
+
+.boundary-editor-preview .hex-boundary,
+.boundary-editor-preview .hex-surface {
   display: block;
 }
 

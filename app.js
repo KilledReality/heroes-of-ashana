@@ -139,6 +139,15 @@ const hexBoundaryStyles = [
 ];
 
 const hexBoundaryColors = ["#d4a74f", "#4da9a7", "#c85b52", "#7fa65a", "#8d72c7", "#d4863b", "#e8e4d6", "#32383a"];
+const hexBoundarySideOptions = [
+  ["top", "Северная грань"],
+  ["topRight", "Северо-восточная"],
+  ["bottomRight", "Юго-восточная"],
+  ["bottom", "Южная грань"],
+  ["bottomLeft", "Юго-западная"],
+  ["topLeft", "Северо-западная"],
+];
+const hexBoundarySideIds = hexBoundarySideOptions.map(([value]) => value);
 
 const mapTypes = [
   ["Регион", "Регион"],
@@ -732,6 +741,8 @@ let mapBrushMode = "terrain";
 let mapBrushBoundaryColor = "#d4a74f";
 let mapBrushBoundaryStyle = "solid";
 let mapBrushBoundaryImage = "";
+let mapBrushBoundaryMode = "all";
+let mapBrushBoundarySides = [...hexBoundarySideIds];
 let searchTerm = "";
 let tagTooltipTimer = null;
 let activeTagTooltip = null;
@@ -762,6 +773,8 @@ mapBrushMode = savedUiState.mapBrushMode || mapBrushMode;
 mapBrushBoundaryColor = savedUiState.mapBrushBoundaryColor || mapBrushBoundaryColor;
 mapBrushBoundaryStyle = savedUiState.mapBrushBoundaryStyle || mapBrushBoundaryStyle;
 mapBrushBoundaryImage = savedUiState.mapBrushBoundaryImage || mapBrushBoundaryImage;
+mapBrushBoundaryMode = savedUiState.mapBrushBoundaryMode || mapBrushBoundaryMode;
+mapBrushBoundarySides = normalizeBoundarySides(savedUiState.mapBrushBoundarySides);
 mapZoom = Number(savedUiState.mapZoom || mapZoom);
 mapScroll = savedUiState.mapScroll || mapScroll;
 if (savedUiState.mapActiveRegionId) state.map.activeRegionId = savedUiState.mapActiveRegionId;
@@ -833,6 +846,8 @@ function saveUiState() {
       mapBrushBoundaryColor,
       mapBrushBoundaryStyle,
       mapBrushBoundaryImage,
+      mapBrushBoundaryMode,
+      mapBrushBoundarySides,
     }));
   } catch (error) {
     console.warn("Не удалось сохранить положение интерфейса:", error.message);
@@ -976,15 +991,23 @@ function normalizeMapRegions(regions) {
           boundaryColor: "#d4a74f",
           boundaryStyle: "none",
           boundaryImage: "",
+          boundarySides: [...hexBoundarySideIds],
           ...value,
           objects: Array.isArray(value.objects) ? value.objects : csv(value.objects ?? ""),
           wikiLinks: Array.isArray(value.wikiLinks) ? value.wikiLinks : csv(value.wikiLinks ?? ""),
           questLinks: Array.isArray(value.questLinks) ? value.questLinks : csv(value.questLinks ?? ""),
           mapLinks: Array.isArray(value.mapLinks) ? value.mapLinks : csv(value.mapLinks ?? ""),
+          boundarySides: normalizeBoundarySides(value.boundarySides),
         },
       ])
     ),
   }));
+}
+
+function normalizeBoundarySides(sides) {
+  if (sides == null) return [...hexBoundarySideIds];
+  const values = Array.isArray(sides) ? sides : csv(sides);
+  return values.map((value) => String(value)).filter((value) => hexBoundarySideIds.includes(value));
 }
 
 function normalizeWikiArticle(article) {
@@ -2788,6 +2811,7 @@ function getHex(region, key) {
       boundaryColor: "#d4a74f",
       boundaryStyle: "none",
       boundaryImage: "",
+      boundarySides: [...hexBoundarySideIds],
     };
   }
   return region.hexes[key];
@@ -2804,6 +2828,7 @@ function hexGrid(region) {
     for (let r = 0; r < rows; r += 1) {
       const key = hexKey(q, r);
       const data = region.hexes[key];
+      const boundarySides = data ? normalizeBoundarySides(data.boundarySides) : [];
       const objectCount = data?.objects?.length ?? 0;
       const linkCount = (data?.wikiLinks?.length ?? 0) + (data?.questLinks?.length ?? 0) + (data?.mapLinks?.length ?? 0);
       const hasContent = Boolean(
@@ -2814,7 +2839,7 @@ function hexGrid(region) {
             data.notes ||
             data.gmNotes ||
             data.tileImage ||
-            (data.boundaryStyle && data.boundaryStyle !== "none") ||
+            ((data.boundaryStyle && data.boundaryStyle !== "none") && boundarySides.length) ||
             (data.terrain && data.terrain !== "пусто"))
       );
       const hex = button("", `hex-cell ${hasContent ? "has-data" : ""} ${state.map.selectedHex === key ? "selected" : ""}`, () => {
@@ -2824,6 +2849,7 @@ function hexGrid(region) {
             current.boundaryStyle = mapBrushBoundaryStyle;
             current.boundaryColor = mapBrushBoundaryColor;
             current.boundaryImage = mapBrushBoundaryStyle === "custom" ? mapBrushBoundaryImage : "";
+            current.boundarySides = mapBrushBoundaryMode === "custom" ? [...mapBrushBoundarySides] : [...hexBoundarySideIds];
           } else {
             current.terrain = mapBrushTerrain;
           }
@@ -2851,7 +2877,9 @@ function hexGrid(region) {
         surface.append(img);
       }
       hex.append(surface);
-      if (data?.boundaryStyle && data.boundaryStyle !== "none") hex.append(hexBoundaryOverlay(data, key));
+      if (data?.boundaryStyle && data.boundaryStyle !== "none" && boundarySides.length) {
+        hex.append(hexBoundaryOverlay({ ...data, boundarySides }, key));
+      }
       if (objectCount || linkCount) hex.append(el("span", "hex-label", String(objectCount + linkCount)));
       grid.append(hex);
     }
@@ -2902,6 +2930,21 @@ function mapBrushPanel() {
   const boundaryFile = document.createElement("input");
   boundaryFile.type = "file";
   boundaryFile.accept = "image/png,image/jpeg,image/webp,image/gif";
+  const boundaryCoverage = selectInput([
+    ["all", "Весь гекс"],
+    ["custom", "Выбрать грани"],
+  ], mapBrushBoundaryMode);
+  boundaryCoverage.addEventListener("change", () => {
+    mapBrushBoundaryMode = boundaryCoverage.value;
+    saveUiState();
+    render();
+  });
+  const boundarySides = checkboxList(hexBoundarySideOptions, mapBrushBoundarySides);
+  boundarySides.classList.add("hex-side-list");
+  boundarySides.addEventListener("change", () => {
+    mapBrushBoundarySides = checkedValues(boundarySides);
+    saveUiState();
+  });
   boundaryFile.addEventListener("change", async () => {
     const file = boundaryFile.files?.[0];
     if (!file) return;
@@ -2920,7 +2963,9 @@ function mapBrushPanel() {
     panel.append(
       labelWrap("Вид контура", boundaryStyle),
       labelWrap("Цвет принадлежности", fragment([boundaryColor, palette])),
+      labelWrap("Покрытие контура", boundaryCoverage)
     );
+    if (mapBrushBoundaryMode === "custom") panel.append(labelWrap("Грани гекса", boundarySides));
     if (mapBrushBoundaryStyle === "custom") panel.append(labelWrap("Текстура контура", boundaryFile));
   } else {
     panel.append(labelWrap("Местность", terrain));
@@ -2956,6 +3001,15 @@ function boundaryColorPalette(colorControl, onChange) {
   return palette;
 }
 
+function buildHexBoundaryPreview(data, key) {
+  const preview = el("div", "hex-preview-stack");
+  preview.append(el("div", "hex-surface preview-surface"));
+  if (data.boundaryStyle && data.boundaryStyle !== "none" && normalizeBoundarySides(data.boundarySides).length) {
+    preview.append(hexBoundaryOverlay(data, key));
+  }
+  return preview;
+}
+
 function hexBoundaryOverlay(data, key) {
   const ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg");
@@ -2963,11 +3017,34 @@ function hexBoundaryOverlay(data, key) {
   svg.setAttribute("preserveAspectRatio", "none");
   svg.classList.add("hex-boundary", `boundary-${data.boundaryStyle}`);
   svg.setAttribute("aria-hidden", "true");
-  const points = "25,0 75,0 100,43.3 75,86.6 25,86.6 0,43.3";
+  const points = [
+    { x: 25, y: 0 },
+    { x: 75, y: 0 },
+    { x: 100, y: 43.3 },
+    { x: 75, y: 86.6 },
+    { x: 25, y: 86.6 },
+    { x: 0, y: 43.3 },
+  ];
+  const sideIndexById = Object.fromEntries(hexBoundarySideIds.map((id, index) => [id, index]));
+  const selectedSideIndexes = normalizeBoundarySides(data.boundarySides)
+    .map((id) => sideIndexById[id])
+    .filter((index) => Number.isInteger(index));
+  if (!selectedSideIndexes.length) return svg;
   const color = /^#[0-9a-f]{6}$/i.test(data.boundaryColor || "") ? data.boundaryColor : "#d4a74f";
-  const polygon = (className, stroke = color) => {
-    const shape = document.createElementNS(ns, "polygon");
-    shape.setAttribute("points", points);
+  const edgeLine = (start, end, className, stroke = color, scale = 1) => {
+    const shape = document.createElementNS(ns, "line");
+    const scaledStart = {
+      x: 50 + (start.x - 50) * scale,
+      y: 43.3 + (start.y - 43.3) * scale,
+    };
+    const scaledEnd = {
+      x: 50 + (end.x - 50) * scale,
+      y: 43.3 + (end.y - 43.3) * scale,
+    };
+    shape.setAttribute("x1", scaledStart.x);
+    shape.setAttribute("y1", scaledStart.y);
+    shape.setAttribute("x2", scaledEnd.x);
+    shape.setAttribute("y2", scaledEnd.y);
     shape.setAttribute("fill", "none");
     shape.setAttribute("stroke", stroke);
     shape.setAttribute("vector-effect", "non-scaling-stroke");
@@ -2975,6 +3052,11 @@ function hexBoundaryOverlay(data, key) {
     shape.setAttribute("stroke-linecap", "round");
     shape.classList.add(className);
     return shape;
+  };
+  const appendEdges = (className, stroke = color, scale = 1) => {
+    selectedSideIndexes.forEach((index) => {
+      svg.append(edgeLine(points[index], points[(index + 1) % points.length], className, stroke, scale));
+    });
   };
 
   if (data.boundaryStyle === "custom" && data.boundaryImage) {
@@ -2992,23 +3074,25 @@ function hexBoundaryOverlay(data, key) {
     image.setAttribute("preserveAspectRatio", "xMidYMid slice");
     pattern.append(image);
     defs.append(pattern);
-    svg.append(defs, polygon("boundary-custom-stroke", `url(#${patternId})`));
+    svg.append(defs);
+    appendEdges("boundary-custom-stroke", `url(#${patternId})`);
     return svg;
   }
 
   if (data.boundaryStyle === "double") {
-    svg.append(polygon("boundary-double-outer"));
-    const inner = polygon("boundary-double-inner");
-    inner.setAttribute("transform", "translate(50 43.3) scale(.9) translate(-50 -43.3)");
-    svg.append(inner);
+    appendEdges("boundary-double-outer");
+    appendEdges("boundary-double-inner", color, 0.9);
   } else if (data.boundaryStyle === "wall") {
-    svg.append(polygon("boundary-wall-base", "#171b1c"), polygon("boundary-wall-top"));
+    appendEdges("boundary-wall-base", "#171b1c");
+    appendEdges("boundary-wall-top");
   } else if (data.boundaryStyle === "traps") {
-    svg.append(polygon("boundary-trap-base", "#171b1c"), polygon("boundary-trap-marks"));
+    appendEdges("boundary-trap-base", "#171b1c");
+    appendEdges("boundary-trap-marks");
   } else if (data.boundaryStyle === "runes") {
-    svg.append(polygon("boundary-rune-glow"), polygon("boundary-rune-marks"));
+    appendEdges("boundary-rune-glow");
+    appendEdges("boundary-rune-marks");
   } else {
-    svg.append(polygon("boundary-stroke"));
+    appendEdges("boundary-stroke");
   }
   return svg;
 }
@@ -3066,22 +3150,34 @@ function hexEditor(region, key, data) {
   const boundaryStyle = selectInput(hexBoundaryStyles, data.boundaryStyle || "none");
   const boundaryColor = colorInput(data.boundaryColor || "#d4a74f");
   const boundaryPalette = boundaryColorPalette(boundaryColor, () => {});
+  const boundaryCoverage = selectInput([
+    ["all", "Весь гекс"],
+    ["custom", "Выбрать грани"],
+  ], normalizeBoundarySides(data.boundarySides).length === hexBoundarySideIds.length ? "all" : "custom");
+  const boundarySides = checkboxList(hexBoundarySideOptions, normalizeBoundarySides(data.boundarySides));
+  boundarySides.classList.add("hex-side-list");
   const boundaryInput = document.createElement("input");
   boundaryInput.type = "file";
   boundaryInput.accept = "image/png,image/jpeg,image/webp,image/gif";
   const boundaryPreview = el("div", "boundary-editor-preview");
+  const boundarySidesWrap = labelWrap("Грани гекса", boundarySides);
+  const currentBoundarySides = () => boundaryCoverage.value === "all" ? [...hexBoundarySideIds] : checkedValues(boundarySides);
   function updateBoundaryPreview() {
     boundaryPreview.replaceChildren();
     const previewData = {
       boundaryStyle: boundaryStyle.value,
       boundaryColor: boundaryColor.value,
       boundaryImage,
+      boundarySides: currentBoundarySides(),
     };
-    boundaryPreview.append(hexBoundaryOverlay(previewData, `preview-${key}`));
+    boundaryPreview.append(buildHexBoundaryPreview(previewData, `preview-${key}`));
+    boundarySidesWrap.hidden = boundaryCoverage.value !== "custom";
   }
   boundaryStyle.addEventListener("change", updateBoundaryPreview);
   boundaryColor.addEventListener("input", updateBoundaryPreview);
   boundaryPalette.addEventListener("click", () => requestAnimationFrame(updateBoundaryPreview));
+  boundaryCoverage.addEventListener("change", updateBoundaryPreview);
+  boundarySides.addEventListener("change", updateBoundaryPreview);
   boundaryInput.addEventListener("change", async () => {
     const file = boundaryInput.files?.[0];
     if (!file) return;
@@ -3098,6 +3194,8 @@ function hexEditor(region, key, data) {
     labelWrap("Подгонка картинки", tileFit),
     labelWrap("Контур гекса", boundaryStyle),
     labelWrap("Цвет принадлежности", fragment([boundaryColor, boundaryPalette])),
+    labelWrap("Покрытие контура", boundaryCoverage),
+    boundarySidesWrap,
     labelWrap("Своя текстура контура", fragment([boundaryInput, boundaryPreview])),
     labelWrap("Объекты, по одному на строку", objects),
     labelWrap("Связанные Wiki-статьи", wikiLinks),
@@ -3136,6 +3234,7 @@ function hexEditor(region, key, data) {
       boundaryColor: boundaryColor.value,
       boundaryStyle: boundaryStyle.value,
       boundaryImage: boundaryStyle.value === "custom" ? boundaryImage : "",
+      boundarySides: currentBoundarySides(),
     };
     saveState();
     render();
