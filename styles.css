@@ -1771,9 +1771,69 @@ label {
   max-width: none;
 }
 
+.hex-boundary {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.8));
+}
+
+.boundary-stroke,
+.boundary-double-outer,
+.boundary-double-inner {
+  stroke-width: 5;
+}
+
+.boundary-dashed .boundary-stroke {
+  stroke-width: 5;
+  stroke-dasharray: 10 6;
+}
+
+.boundary-double-inner {
+  stroke-width: 2.5;
+}
+
+.boundary-wall-base {
+  stroke-width: 10;
+}
+
+.boundary-wall-top {
+  stroke-width: 5;
+  stroke-dasharray: 11 3;
+}
+
+.boundary-trap-base {
+  stroke-width: 6;
+}
+
+.boundary-trap-marks {
+  stroke-width: 6;
+  stroke-dasharray: 1 11;
+  stroke-linecap: round;
+}
+
+.boundary-rune-glow {
+  stroke-width: 8;
+  opacity: 0.28;
+  filter: blur(2px);
+}
+
+.boundary-rune-marks {
+  stroke-width: 3;
+  stroke-dasharray: 4 7 1 5;
+}
+
+.boundary-custom-stroke {
+  stroke-width: 10;
+}
+
 .hex-label {
   position: relative;
-  z-index: 2;
+  z-index: 4;
   min-width: 24px;
   min-height: 24px;
   display: grid;
@@ -1851,6 +1911,52 @@ label {
   border: 1px solid rgba(212, 167, 79, 0.2);
   border-radius: 8px;
   background: rgba(212, 167, 79, 0.06);
+}
+
+.boundary-brush-panel {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.brush-hint {
+  margin: 0;
+  color: var(--paper-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.boundary-color-palette {
+  display: grid;
+  grid-template-columns: repeat(8, 24px);
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.boundary-color-swatch {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+}
+
+.boundary-color-swatch.active {
+  outline: 2px solid var(--paper-strong);
+  outline-offset: 2px;
+}
+
+.boundary-editor-preview {
+  position: relative;
+  width: 128px;
+  height: 112px;
+  margin-top: 8px;
+  overflow: hidden;
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  background: #262b2b;
+}
+
+.boundary-editor-preview .hex-boundary {
+  display: block;
 }
 
 .small-button.active {

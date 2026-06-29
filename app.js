@@ -127,6 +127,19 @@ const terrainTileFiles = {
   подземелье: "assets/hex-terrain/temple destroyed.png",
 };
 
+const hexBoundaryStyles = [
+  ["none", "Без контура"],
+  ["solid", "Сплошная граница"],
+  ["dashed", "Пунктир"],
+  ["double", "Двойная граница"],
+  ["wall", "Стена / укрепление"],
+  ["traps", "Ловушки"],
+  ["runes", "Руны / магическая зона"],
+  ["custom", "Своя текстура"],
+];
+
+const hexBoundaryColors = ["#d4a74f", "#4da9a7", "#c85b52", "#7fa65a", "#8d72c7", "#d4863b", "#e8e4d6", "#32383a"];
+
 const mapTypes = [
   ["Регион", "Регион"],
   ["Мир", "Мир"],
@@ -715,6 +728,10 @@ let mapZoom = state.map.zoom || 1;
 let mapScroll = { left: 0, top: 0 };
 let mapBrushTerrain = "лес";
 let mapBrushEnabled = false;
+let mapBrushMode = "terrain";
+let mapBrushBoundaryColor = "#d4a74f";
+let mapBrushBoundaryStyle = "solid";
+let mapBrushBoundaryImage = "";
 let searchTerm = "";
 let tagTooltipTimer = null;
 let activeTagTooltip = null;
@@ -741,6 +758,10 @@ activeGalleryTag = savedUiState.activeGalleryTag || activeGalleryTag;
 activeMinigameId = savedUiState.activeMinigameId || activeMinigameId;
 mapBrushTerrain = savedUiState.mapBrushTerrain || mapBrushTerrain;
 mapBrushEnabled = Boolean(savedUiState.mapBrushEnabled ?? mapBrushEnabled);
+mapBrushMode = savedUiState.mapBrushMode || mapBrushMode;
+mapBrushBoundaryColor = savedUiState.mapBrushBoundaryColor || mapBrushBoundaryColor;
+mapBrushBoundaryStyle = savedUiState.mapBrushBoundaryStyle || mapBrushBoundaryStyle;
+mapBrushBoundaryImage = savedUiState.mapBrushBoundaryImage || mapBrushBoundaryImage;
 mapZoom = Number(savedUiState.mapZoom || mapZoom);
 mapScroll = savedUiState.mapScroll || mapScroll;
 if (savedUiState.mapActiveRegionId) state.map.activeRegionId = savedUiState.mapActiveRegionId;
@@ -808,6 +829,10 @@ function saveUiState() {
       mapScroll,
       mapBrushTerrain,
       mapBrushEnabled,
+      mapBrushMode,
+      mapBrushBoundaryColor,
+      mapBrushBoundaryStyle,
+      mapBrushBoundaryImage,
     }));
   } catch (error) {
     console.warn("Не удалось сохранить положение интерфейса:", error.message);
@@ -948,6 +973,9 @@ function normalizeMapRegions(regions) {
           mapLinks: [],
           tileImage: "",
           tileFit: "cover",
+          boundaryColor: "#d4a74f",
+          boundaryStyle: "none",
+          boundaryImage: "",
           ...value,
           objects: Array.isArray(value.objects) ? value.objects : csv(value.objects ?? ""),
           wikiLinks: Array.isArray(value.wikiLinks) ? value.wikiLinks : csv(value.wikiLinks ?? ""),
@@ -1572,6 +1600,7 @@ function compactStateForStorage(source) {
     if (isEmbeddedImage(region.image)) region.image = "";
     Object.values(region.hexes ?? {}).forEach((hex) => {
       if (isEmbeddedImage(hex.tileImage)) hex.tileImage = "";
+      if (isEmbeddedImage(hex.boundaryImage)) hex.boundaryImage = "";
     });
   });
   compact.rolls = compact.rolls?.slice(0, 80) ?? [];
@@ -2751,6 +2780,9 @@ function getHex(region, key) {
       mapLinks: [],
       tileImage: "",
       tileFit: "cover",
+      boundaryColor: "#d4a74f",
+      boundaryStyle: "none",
+      boundaryImage: "",
     };
   }
   return region.hexes[key];
@@ -2777,12 +2809,19 @@ function hexGrid(region) {
             data.notes ||
             data.gmNotes ||
             data.tileImage ||
+            (data.boundaryStyle && data.boundaryStyle !== "none") ||
             (data.terrain && data.terrain !== "пусто"))
       );
       const hex = button("", `hex-cell ${hasContent ? "has-data" : ""} ${state.map.selectedHex === key ? "selected" : ""}`, () => {
         if (isAdmin && mapBrushEnabled) {
           const current = getHex(region, key);
-          current.terrain = mapBrushTerrain;
+          if (mapBrushMode === "boundary") {
+            current.boundaryStyle = mapBrushBoundaryStyle;
+            current.boundaryColor = mapBrushBoundaryColor;
+            current.boundaryImage = mapBrushBoundaryStyle === "custom" ? mapBrushBoundaryImage : "";
+          } else {
+            current.terrain = mapBrushTerrain;
+          }
         }
         state.map.selectedHex = key;
         saveState();
@@ -2805,6 +2844,7 @@ function hexGrid(region) {
         if (terrainImage && !data?.tileImage) img.className = "terrain-tile-art";
         hex.append(img);
       }
+      if (data?.boundaryStyle && data.boundaryStyle !== "none") hex.append(hexBoundaryOverlay(data, key));
       if (objectCount || linkCount) hex.append(el("span", "hex-label", String(objectCount + linkCount)));
       grid.append(hex);
     }
@@ -2822,17 +2862,146 @@ function mapPixelSize(region) {
 }
 
 function mapBrushPanel() {
-  const panel = el("div", "brush-panel");
+  const panel = el("div", "brush-panel boundary-brush-panel");
+  const mode = selectInput([
+    ["terrain", "Местность"],
+    ["boundary", "Контур гекса"],
+  ], mapBrushMode);
+  mode.addEventListener("change", () => {
+    mapBrushMode = mode.value;
+    saveUiState();
+    render();
+  });
   const terrain = selectInput(hexTerrains, mapBrushTerrain);
   terrain.addEventListener("change", () => {
     mapBrushTerrain = terrain.value;
+    saveUiState();
+  });
+  const boundaryStyle = selectInput(hexBoundaryStyles, mapBrushBoundaryStyle);
+  boundaryStyle.addEventListener("change", () => {
+    mapBrushBoundaryStyle = boundaryStyle.value;
+    saveUiState();
+    render();
+  });
+  const boundaryColor = colorInput(mapBrushBoundaryColor);
+  boundaryColor.addEventListener("input", () => {
+    mapBrushBoundaryColor = boundaryColor.value;
+    saveUiState();
+  });
+  const palette = boundaryColorPalette(boundaryColor, (color) => {
+    mapBrushBoundaryColor = color;
+    saveUiState();
+  });
+  const boundaryFile = document.createElement("input");
+  boundaryFile.type = "file";
+  boundaryFile.accept = "image/png,image/jpeg,image/webp,image/gif";
+  boundaryFile.addEventListener("change", async () => {
+    const file = boundaryFile.files?.[0];
+    if (!file) return;
+    mapBrushBoundaryImage = await imageFileToUrl(file, "map-boundaries");
+    mapBrushBoundaryStyle = "custom";
+    saveUiState();
+    render();
   });
   const toggle = button(mapBrushEnabled ? "Кисть включена" : "Кисть выключена", `small-button ${mapBrushEnabled ? "active" : ""}`, () => {
     mapBrushEnabled = !mapBrushEnabled;
+    saveUiState();
     render();
   });
-  panel.append(labelWrap("Кисть местности", terrain), toggle);
+  panel.append(labelWrap("Режим кисти", mode));
+  if (mapBrushMode === "boundary") {
+    panel.append(
+      labelWrap("Вид контура", boundaryStyle),
+      labelWrap("Цвет принадлежности", fragment([boundaryColor, palette])),
+    );
+    if (mapBrushBoundaryStyle === "custom") panel.append(labelWrap("Текстура контура", boundaryFile));
+  } else {
+    panel.append(labelWrap("Местность", terrain));
+  }
+  panel.append(toggle, el("p", "brush-hint", mapBrushMode === "boundary"
+    ? "Клик по гексу меняет только его контур. Картинка и местность сохраняются."
+    : "Клик по гексу меняет только местность."));
   return panel;
+}
+
+function colorInput(value) {
+  const control = document.createElement("input");
+  control.type = "color";
+  control.value = /^#[0-9a-f]{6}$/i.test(value || "") ? value : "#d4a74f";
+  return control;
+}
+
+function boundaryColorPalette(colorControl, onChange) {
+  const palette = el("div", "boundary-color-palette");
+  hexBoundaryColors.forEach((color) => {
+    const swatch = button("", "boundary-color-swatch", () => {
+      colorControl.value = color;
+      onChange(color);
+      palette.querySelectorAll(".boundary-color-swatch").forEach((item) => item.classList.toggle("active", item.dataset.color === color));
+    });
+    swatch.type = "button";
+    swatch.title = `Выбрать цвет ${color}`;
+    swatch.dataset.color = color;
+    swatch.style.backgroundColor = color;
+    swatch.classList.toggle("active", colorControl.value.toLowerCase() === color.toLowerCase());
+    palette.append(swatch);
+  });
+  return palette;
+}
+
+function hexBoundaryOverlay(data, key) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 100 86.6");
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.classList.add("hex-boundary", `boundary-${data.boundaryStyle}`);
+  svg.setAttribute("aria-hidden", "true");
+  const points = "25,2 75,2 98,43.3 75,84.6 25,84.6 2,43.3";
+  const color = /^#[0-9a-f]{6}$/i.test(data.boundaryColor || "") ? data.boundaryColor : "#d4a74f";
+  const polygon = (className, stroke = color) => {
+    const shape = document.createElementNS(ns, "polygon");
+    shape.setAttribute("points", points);
+    shape.setAttribute("fill", "none");
+    shape.setAttribute("stroke", stroke);
+    shape.setAttribute("vector-effect", "non-scaling-stroke");
+    shape.classList.add(className);
+    return shape;
+  };
+
+  if (data.boundaryStyle === "custom" && data.boundaryImage) {
+    const defs = document.createElementNS(ns, "defs");
+    const pattern = document.createElementNS(ns, "pattern");
+    const patternId = `hex-boundary-${String(key).replace(/[^a-z0-9]/gi, "-")}-${Math.random().toString(36).slice(2)}`;
+    pattern.setAttribute("id", patternId);
+    pattern.setAttribute("patternUnits", "userSpaceOnUse");
+    pattern.setAttribute("width", "20");
+    pattern.setAttribute("height", "20");
+    const image = document.createElementNS(ns, "image");
+    image.setAttribute("href", data.boundaryImage);
+    image.setAttribute("width", "20");
+    image.setAttribute("height", "20");
+    image.setAttribute("preserveAspectRatio", "xMidYMid slice");
+    pattern.append(image);
+    defs.append(pattern);
+    svg.append(defs, polygon("boundary-custom-stroke", `url(#${patternId})`));
+    return svg;
+  }
+
+  if (data.boundaryStyle === "double") {
+    svg.append(polygon("boundary-double-outer"));
+    const inner = polygon("boundary-double-inner");
+    inner.setAttribute("transform", "translate(50 43.3) scale(.9) translate(-50 -43.3)");
+    svg.append(inner);
+  } else if (data.boundaryStyle === "wall") {
+    svg.append(polygon("boundary-wall-base", "#171b1c"), polygon("boundary-wall-top"));
+  } else if (data.boundaryStyle === "traps") {
+    svg.append(polygon("boundary-trap-base", "#171b1c"), polygon("boundary-trap-marks"));
+  } else if (data.boundaryStyle === "runes") {
+    svg.append(polygon("boundary-rune-glow"), polygon("boundary-rune-marks"));
+  } else {
+    svg.append(polygon("boundary-stroke"));
+  }
+  return svg;
 }
 
 function hexKey(q, r) {
@@ -2884,12 +3053,43 @@ function hexEditor(region, key, data) {
     updateTilePreview();
   });
   updateTilePreview();
+  let boundaryImage = data.boundaryImage || "";
+  const boundaryStyle = selectInput(hexBoundaryStyles, data.boundaryStyle || "none");
+  const boundaryColor = colorInput(data.boundaryColor || "#d4a74f");
+  const boundaryPalette = boundaryColorPalette(boundaryColor, () => {});
+  const boundaryInput = document.createElement("input");
+  boundaryInput.type = "file";
+  boundaryInput.accept = "image/png,image/jpeg,image/webp,image/gif";
+  const boundaryPreview = el("div", "boundary-editor-preview");
+  function updateBoundaryPreview() {
+    boundaryPreview.replaceChildren();
+    const previewData = {
+      boundaryStyle: boundaryStyle.value,
+      boundaryColor: boundaryColor.value,
+      boundaryImage,
+    };
+    boundaryPreview.append(hexBoundaryOverlay(previewData, `preview-${key}`));
+  }
+  boundaryStyle.addEventListener("change", updateBoundaryPreview);
+  boundaryColor.addEventListener("input", updateBoundaryPreview);
+  boundaryPalette.addEventListener("click", () => requestAnimationFrame(updateBoundaryPreview));
+  boundaryInput.addEventListener("change", async () => {
+    const file = boundaryInput.files?.[0];
+    if (!file) return;
+    boundaryImage = await imageFileToUrl(file, "map-boundaries");
+    boundaryStyle.value = "custom";
+    updateBoundaryPreview();
+  });
+  updateBoundaryPreview();
   form.append(
     labelWrap("Название", title),
     labelWrap("Местность", terrain),
     checkboxWrap("Видно игрокам", visible),
     labelWrap("Картинка гекса", fragment([tileInput, tilePreview])),
     labelWrap("Подгонка картинки", tileFit),
+    labelWrap("Контур гекса", boundaryStyle),
+    labelWrap("Цвет принадлежности", fragment([boundaryColor, boundaryPalette])),
+    labelWrap("Своя текстура контура", fragment([boundaryInput, boundaryPreview])),
     labelWrap("Объекты, по одному на строку", objects),
     labelWrap("Связанные Wiki-статьи", wikiLinks),
     labelWrap("Связанные задания", questLinks),
@@ -2924,6 +3124,9 @@ function hexEditor(region, key, data) {
       mapLinks: checkedValues(mapLinks),
       tileImage,
       tileFit: tileFit.value,
+      boundaryColor: boundaryColor.value,
+      boundaryStyle: boundaryStyle.value,
+      boundaryImage: boundaryStyle.value === "custom" ? boundaryImage : "",
     };
     saveState();
     render();
