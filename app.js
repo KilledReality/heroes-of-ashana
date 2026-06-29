@@ -92,6 +92,7 @@ const hexTerrains = [
   ["пусто", "Пусто"],
   ["равнина", "Равнина"],
   ["лес", "Лес"],
+  ["холмы", "Холмы"],
   ["вода", "Вода"],
   ["вода-берег-1", "Вода: берег 1"],
   ["вода-берег-2", "Вода: берег 2"],
@@ -101,8 +102,8 @@ const hexTerrains = [
   ["горы", "Горы"],
   ["дорога", "Дорога"],
   ["город", "Город"],
-  ["деревня", "Деревня"],
-  ["малая-деревня", "Малая деревня"],
+  ["поселение", "Поселение"],
+  ["населенный-пункт", "Населенный пункт"],
   ["укрепление", "Укрепление"],
   ["опасность", "Опасность"],
   ["подземелье", "Подземелье"],
@@ -111,6 +112,7 @@ const hexTerrains = [
 const terrainTileFiles = {
   равнина: "assets/hex-terrain/grass.png",
   лес: "assets/hex-terrain/forest.png",
+  холмы: "assets/hex-terrain/mountain.png",
   вода: "assets/hex-terrain/water1.png",
   "вода-берег-1": "assets/hex-terrain/water bereg1.png",
   "вода-берег-2": "assets/hex-terrain/water bereg2.png",
@@ -120,8 +122,8 @@ const terrainTileFiles = {
   горы: "assets/hex-terrain/mountain.png",
   дорога: "assets/hex-terrain/grass doroga1.png",
   город: "assets/hex-terrain/village.png",
-  деревня: "assets/hex-terrain/village.png",
-  "малая-деревня": "assets/hex-terrain/small village.png",
+  поселение: "assets/hex-terrain/village.png",
+  "населенный-пункт": "assets/hex-terrain/small village.png",
   укрепление: "assets/hex-terrain/castle.png",
   опасность: "assets/hex-terrain/bad place.png",
   подземелье: "assets/hex-terrain/temple destroyed.png",
@@ -148,6 +150,17 @@ const hexBoundarySideOptions = [
   ["topLeft", "Северо-западная"],
 ];
 const hexBoundarySideIds = hexBoundarySideOptions.map(([value]) => value);
+const squareBoundarySideOptions = [
+  ["top", "Северная грань"],
+  ["topRight", "Восточная грань"],
+  ["bottom", "Южная грань"],
+  ["topLeft", "Западная грань"],
+];
+
+const terrainAliases = {
+  деревня: "поселение",
+  "малая-деревня": "населенный-пункт",
+};
 
 const mapTypes = [
   ["Регион", "Регион"],
@@ -685,7 +698,7 @@ const seedData = {
         hexes: {
           "8,6": { title: "Лагерь партии", terrain: "лес", visible: true, notes: "Стартовая точка для редактирования карты Межей.", gmNotes: "", objects: ["партия", "лагерь"] },
           "9,6": { title: "Лесная дорога", terrain: "дорога", visible: true, notes: "Дорога через чащу.", gmNotes: "", objects: ["дорога"] },
-          "10,6": { title: "Старая деревня", terrain: "деревня", visible: true, notes: "Небольшое поселение у дороги.", gmNotes: "", objects: ["поселение", "NPC"] },
+          "10,6": { title: "Старое поселение", terrain: "поселение", visible: true, notes: "Небольшое поселение у дороги.", gmNotes: "", objects: ["поселение", "NPC"] },
           "11,6": { title: "Речной переход", terrain: "вода", visible: true, notes: "Место переправы.", gmNotes: "", objects: ["брод", "река"] },
         },
       },
@@ -737,6 +750,7 @@ let mapZoom = state.map.zoom || 1;
 let mapScroll = { left: 0, top: 0 };
 let mapPanelScroll = { atlas: 0, inspector: 0 };
 let mapBrushTerrain = "лес";
+let mapBrushTerrains = ["лес"];
 let mapBrushEnabled = false;
 let mapBrushMode = "terrain";
 let mapBrushBoundaryColor = "#d4a74f";
@@ -769,6 +783,8 @@ skillSearchTerm = savedUiState.skillSearchTerm || skillSearchTerm;
 activeGalleryTag = savedUiState.activeGalleryTag || activeGalleryTag;
 activeMinigameId = savedUiState.activeMinigameId || activeMinigameId;
 mapBrushTerrain = savedUiState.mapBrushTerrain || mapBrushTerrain;
+mapBrushTerrains = normalizeTerrains(savedUiState.mapBrushTerrains ?? mapBrushTerrain);
+mapBrushTerrain = mapBrushTerrains[0] ?? "пусто";
 mapBrushEnabled = Boolean(savedUiState.mapBrushEnabled ?? mapBrushEnabled);
 mapBrushMode = savedUiState.mapBrushMode || mapBrushMode;
 mapBrushBoundaryColor = savedUiState.mapBrushBoundaryColor || mapBrushBoundaryColor;
@@ -844,6 +860,7 @@ function saveUiState() {
       mapScroll,
       mapPanelScroll,
       mapBrushTerrain,
+      mapBrushTerrains,
       mapBrushEnabled,
       mapBrushMode,
       mapBrushBoundaryColor,
@@ -966,6 +983,56 @@ function setCurrentAshanaDate(date) {
   activeCalendarDateKey = ashanaDateKey(state.meta.ashanaDate);
 }
 
+function normalizeTerrains(terrains) {
+  const source = Array.isArray(terrains) ? terrains : [terrains];
+  const allowed = new Set(hexTerrains.map(([value]) => value));
+  const normalized = source
+    .flatMap((value) => typeof value === "string" && value.includes(",") ? csv(value) : [value])
+    .map((value) => terrainAliases[String(value || "").trim()] || String(value || "").trim())
+    .filter((value) => value && value !== "пусто" && allowed.has(value));
+  return [...new Set(normalized)];
+}
+
+function terrainValues(cell) {
+  return normalizeTerrains(cell?.terrains?.length ? cell.terrains : cell?.terrain);
+}
+
+function primaryTerrain(cell) {
+  return terrainValues(cell)[0] || "пусто";
+}
+
+function terrainLabel(value) {
+  return hexTerrains.find(([terrainValue]) => terrainValue === value)?.[1] || value;
+}
+
+function terrainSummary(cell) {
+  const values = terrainValues(cell);
+  return values.length ? values.map(terrainLabel).join(", ") : "Пусто";
+}
+
+function isSquareRegion(region) {
+  return region?.gridType === "square";
+}
+
+function boundarySideOptionsFor(region) {
+  return isSquareRegion(region) ? squareBoundarySideOptions : hexBoundarySideOptions;
+}
+
+function boundarySideIdsFor(region) {
+  return boundarySideOptionsFor(region).map(([value]) => value);
+}
+
+function adaptBoundarySidesForRegion(region, sides) {
+  const normalized = normalizeBoundarySides(sides);
+  if (!isSquareRegion(region)) return normalized;
+  const squareSides = [];
+  if (normalized.includes("top")) squareSides.push("top");
+  if (normalized.includes("topRight") || normalized.includes("bottomRight")) squareSides.push("topRight");
+  if (normalized.includes("bottom")) squareSides.push("bottom");
+  if (normalized.includes("topLeft") || normalized.includes("bottomLeft")) squareSides.push("topLeft");
+  return squareSides.length ? squareSides : ["top"];
+}
+
 function normalizeMapRegions(regions) {
   return regions.map((region) => ({
     id: region.id || slug(region.title || "region"),
@@ -975,6 +1042,7 @@ function normalizeMapRegions(regions) {
     public: region.public ?? true,
     image: region.image || "",
     mode: region.mode || "canvas",
+    gridType: region.gridType === "square" || region.grid?.type === "square" ? "square" : "hex",
     grid: { cols: 24, rows: 14, hexSize: 92, offsetX: 0, offsetY: 0, ...(region.grid ?? {}) },
     hexes: Object.fromEntries(
       Object.entries(region.hexes ?? {}).map(([key, value]) => [
@@ -982,6 +1050,7 @@ function normalizeMapRegions(regions) {
         {
           title: "",
           terrain: "пусто",
+          terrains: [],
           visible: true,
           notes: "",
           gmNotes: "",
@@ -997,6 +1066,8 @@ function normalizeMapRegions(regions) {
           boundarySides: [...hexBoundarySideIds],
           boundaryLayers: [],
           ...value,
+          terrain: normalizeTerrains(value.terrains?.length ? value.terrains : value.terrain)[0] || "пусто",
+          terrains: normalizeTerrains(value.terrains?.length ? value.terrains : value.terrain),
           objects: Array.isArray(value.objects) ? value.objects : csv(value.objects ?? ""),
           wikiLinks: Array.isArray(value.wikiLinks) ? value.wikiLinks : csv(value.wikiLinks ?? ""),
           questLinks: Array.isArray(value.questLinks) ? value.questLinks : csv(value.questLinks ?? ""),
@@ -2234,11 +2305,11 @@ function globalSearchResults(query) {
     Object.entries(region.hexes ?? {}).forEach(([key, hex]) => {
       if (!hex.visible && !isAdmin) return;
       add(
-        "Гексы",
-        hex.title || `Гекс ${key}`,
+        isSquareRegion(region) ? "Клетки карты" : "Гексы",
+        hex.title || `${isSquareRegion(region) ? "Клетка" : "Гекс"} ${key}`,
         `${region.title} · ${key}`,
-        hex.notes || hex.objects?.join(", ") || hex.terrain,
-        [key, hex.title, hex.terrain, hex.notes, isAdmin ? hex.gmNotes : "", (hex.objects ?? []).join(" ")],
+        hex.notes || hex.objects?.join(", ") || terrainSummary(hex),
+        [key, hex.title, terrainSummary(hex), hex.notes, isAdmin ? hex.gmNotes : "", (hex.objects ?? []).join(" ")],
         () => {
           clearSearchTerm();
           state.map.activeRegionId = region.id;
@@ -2568,16 +2639,20 @@ function createMapRegion() {
   if (!isAdmin) return;
   const title = prompt("Название новой карты/слоя атласа", "Новая карта");
   if (title === null) return;
+  const gridAnswer = prompt("Тип сетки: введи «гексы» для географии или «квадраты» для поселения", "гексы");
+  if (gridAnswer === null) return;
+  const gridType = gridAnswer.trim().toLowerCase().startsWith("квад") ? "square" : "hex";
   const region = normalizeMapRegions([
     {
       id: slug(title || "map"),
       title: title.trim() || "Новая карта",
       type: "Регион",
-      description: "Новая карта атласа. Заполни описание и гексы в режиме мастера.",
+      description: `Новая карта атласа. Заполни описание и ${gridType === "square" ? "клетки" : "гексы"} в режиме мастера.`,
       public: false,
       image: "",
       mode: "canvas",
-      grid: { cols: 18, rows: 12, hexSize: 92, offsetX: 24, offsetY: 24 },
+      gridType,
+      grid: { cols: 18, rows: 12, hexSize: gridType === "square" ? 72 : 92, offsetX: 24, offsetY: 24 },
       hexes: {},
     },
   ])[0];
@@ -2650,7 +2725,7 @@ function mapAtlasPanel(activeRegion) {
       el("span", "map-atlas-type", region.type || "Регион"),
       el("strong", "", region.title),
       el("span", "map-atlas-description", region.description || "Без описания"),
-      compactBadges([region.public ? "игрокам" : "скрыто", `${region.grid.cols}x${region.grid.rows}`])
+      compactBadges([region.public ? "игрокам" : "скрыто", isSquareRegion(region) ? "квадраты" : "гексы", `${region.grid.cols}x${region.grid.rows}`])
     );
     list.append(item);
   });
@@ -2666,12 +2741,12 @@ function mapInspector(region, selected) {
   const head = el("div", "map-inspector-head");
   head.append(
     el("p", "eyebrow", region.title),
-    el("h3", "", selected.title || `Гекс ${state.map.selectedHex}`),
-    compactBadges([state.map.selectedHex, selected.terrain, selected.visible ? "игрокам" : "скрыто"])
+    el("h3", "", selected.title || `${isSquareRegion(region) ? "Клетка" : "Гекс"} ${state.map.selectedHex}`),
+    compactBadges([state.map.selectedHex, ...terrainValues(selected).map(terrainLabel), selected.visible ? "игрокам" : "скрыто"])
   );
 
   const body = el("div", "map-inspector-body");
-  if (isAdmin) body.append(mapBrushPanel());
+  if (isAdmin) body.append(mapBrushPanel(region));
   body.append(
     inspectorSection("Заметки", el("p", "", selected.notes || "Публичных заметок пока нет.")),
     inspectorSection("Объекты", selected.objects?.length ? compactBadges(selected.objects) : el("p", "muted", "Объектов пока нет")),
@@ -2680,7 +2755,7 @@ function mapInspector(region, selected) {
   );
   if (isAdmin && selected.gmNotes) body.append(inspectorSection("GM", el("p", "", selected.gmNotes), "danger"));
   if (isAdmin) {
-    body.append(inspectorSection("Редактор гекса", hexEditor(region, state.map.selectedHex, selected), "editor"));
+    body.append(inspectorSection(`Редактор ${isSquareRegion(region) ? "клетки" : "гекса"}`, hexEditor(region, state.map.selectedHex, selected), "editor"));
     body.append(inspectorSection("Настройки карты", regionEditor(region), "editor"));
   }
 
@@ -2877,6 +2952,7 @@ function getHex(region, key) {
     region.hexes[key] = {
       title: "",
       terrain: "пусто",
+      terrains: [],
       visible: true,
       notes: "",
       gmNotes: "",
@@ -2897,7 +2973,8 @@ function getHex(region, key) {
 }
 
 function hexGrid(region) {
-  const grid = el("div", "hex-grid");
+  const squareGrid = isSquareRegion(region);
+  const grid = el("div", `hex-grid ${squareGrid ? "square-grid" : ""}`);
   const { cols, rows, hexSize, offsetX, offsetY } = region.grid;
   const hexHeight = hexSize * 0.866;
   const { width: gridWidth, height: gridHeight } = mapPixelSize(region);
@@ -2919,9 +2996,9 @@ function hexGrid(region) {
             data.gmNotes ||
             data.tileImage ||
             boundaryLayers.length ||
-            (data.terrain && data.terrain !== "пусто"))
+            terrainValues(data).length)
       );
-      const hex = button("", `hex-cell ${hasContent ? "has-data" : ""} ${state.map.selectedHex === key ? "selected" : ""}`, () => {
+      const hex = button("", `hex-cell ${squareGrid ? "square-cell" : ""} ${hasContent ? "has-data" : ""} ${state.map.selectedHex === key ? "selected" : ""}`, () => {
         if (isAdmin && mapBrushEnabled) {
           const current = getHex(region, key);
           if (mapBrushMode === "boundary") {
@@ -2931,25 +3008,29 @@ function hexGrid(region) {
                 style: mapBrushBoundaryStyle,
                 color: mapBrushBoundaryColor,
                 image: mapBrushBoundaryStyle === "custom" ? mapBrushBoundaryImage : "",
-                sides: mapBrushBoundaryMode === "custom" ? mapBrushBoundarySides : hexBoundarySideIds,
+                sides: mapBrushBoundaryMode === "custom"
+                  ? adaptBoundarySidesForRegion(region, mapBrushBoundarySides)
+                  : boundarySideIdsFor(region),
               })];
             syncLegacyBoundaryFields(current);
           } else {
-            current.terrain = mapBrushTerrain;
+            current.terrains = normalizeTerrains(mapBrushTerrains);
+            current.terrain = current.terrains[0] || "пусто";
           }
         }
         state.map.selectedHex = key;
         saveState();
         render();
       });
-      hex.title = data?.title || `Гекс ${key}`;
+      hex.title = data?.title || `${squareGrid ? "Клетка" : "Гекс"} ${key}`;
       hex.style.width = `${hexSize}px`;
-      hex.style.height = `${hexHeight}px`;
-      hex.style.left = `${offsetX + q * hexSize * 0.75}px`;
-      hex.style.top = `${offsetY + r * hexHeight + (q % 2) * (hexHeight / 2)}px`;
-      const surface = el("div", "hex-surface");
-      if (data?.terrain) surface.dataset.terrain = data.terrain;
-      const terrainImage = terrainTileFiles[data?.terrain];
+      hex.style.height = `${squareGrid ? hexSize : hexHeight}px`;
+      hex.style.left = `${offsetX + q * hexSize * (squareGrid ? 1 : 0.75)}px`;
+      hex.style.top = `${offsetY + (squareGrid ? r * hexSize : r * hexHeight + (q % 2) * (hexHeight / 2))}px`;
+      const surface = el("div", `hex-surface ${squareGrid ? "square-surface" : ""}`);
+      const visualTerrain = primaryTerrain(data);
+      if (visualTerrain) surface.dataset.terrain = visualTerrain;
+      const terrainImage = terrainTileFiles[visualTerrain];
       const tileSource = data?.tileImage || terrainImage;
       if (terrainImage && !data?.tileImage) surface.classList.add("has-terrain-art");
       if (tileSource) {
@@ -2962,7 +3043,9 @@ function hexGrid(region) {
       }
       hex.append(surface);
       boundaryLayers.forEach((layer, index) => {
-        const overlay = hexBoundaryOverlay(layer, `${key}-${index}`);
+        const overlay = squareGrid
+          ? squareBoundaryOverlay(layer, `${key}-${index}`)
+          : hexBoundaryOverlay(layer, `${key}-${index}`);
         overlay.style.zIndex = String(3 + index);
         hex.append(overlay);
       });
@@ -2975,6 +3058,12 @@ function hexGrid(region) {
 
 function mapPixelSize(region) {
   const { cols, rows, hexSize, offsetX, offsetY } = region.grid;
+  if (isSquareRegion(region)) {
+    return {
+      width: offsetX + cols * hexSize + 80,
+      height: offsetY + rows * hexSize + 80,
+    };
+  }
   const hexHeight = hexSize * 0.866;
   return {
     width: offsetX + cols * hexSize * 0.75 + hexSize + 80,
@@ -2982,20 +3071,24 @@ function mapPixelSize(region) {
   };
 }
 
-function mapBrushPanel() {
+function mapBrushPanel(region) {
+  const cellName = isSquareRegion(region) ? "клетки" : "гекса";
+  const boundaryOptions = boundarySideOptionsFor(region);
   const panel = el("div", "brush-panel boundary-brush-panel");
   const mode = selectInput([
     ["terrain", "Местность"],
-    ["boundary", "Контур гекса"],
+    ["boundary", `Контур ${cellName}`],
   ], mapBrushMode);
   mode.addEventListener("change", () => {
     mapBrushMode = mode.value;
     saveUiState();
     render();
   });
-  const terrain = selectInput(hexTerrains, mapBrushTerrain);
+  const terrain = checkboxList(hexTerrains.filter(([value]) => value !== "пусто"), mapBrushTerrains);
+  terrain.classList.add("terrain-checkbox-list");
   terrain.addEventListener("change", () => {
-    mapBrushTerrain = terrain.value;
+    mapBrushTerrains = normalizeTerrains(checkedValues(terrain));
+    mapBrushTerrain = mapBrushTerrains[0] || "пусто";
     saveUiState();
   });
   const boundaryStyle = selectInput(hexBoundaryStyles, mapBrushBoundaryStyle);
@@ -3017,7 +3110,7 @@ function mapBrushPanel() {
   boundaryFile.type = "file";
   boundaryFile.accept = "image/png,image/jpeg,image/webp,image/gif";
   const boundaryCoverage = selectInput([
-    ["all", "Весь гекс"],
+    ["all", `Вся ${isSquareRegion(region) ? "клетка" : "граница гекса"}`],
     ["custom", "Выбрать грани"],
   ], mapBrushBoundaryMode);
   boundaryCoverage.addEventListener("change", () => {
@@ -3025,9 +3118,9 @@ function mapBrushPanel() {
     saveUiState();
     render();
   });
-  const boundarySides = checkboxList(hexBoundarySideOptions, mapBrushBoundarySides);
+  const boundarySides = checkboxList(boundaryOptions, adaptBoundarySidesForRegion(region, mapBrushBoundarySides));
   boundarySides.classList.add("hex-side-list");
-  const boundarySidesWrap = labelWrap("Грани гекса", boundarySides);
+  const boundarySidesWrap = labelWrap(`Грани ${cellName}`, boundarySides);
   boundarySides.addEventListener("change", () => {
     mapBrushBoundarySides = checkedValues(boundarySides);
     saveUiState();
@@ -3056,11 +3149,11 @@ function mapBrushPanel() {
     panel.append(boundarySidesWrap);
     if (mapBrushBoundaryStyle === "custom") panel.append(labelWrap("Текстура контура", boundaryFile));
   } else {
-    panel.append(labelWrap("Местность", terrain));
+    panel.append(labelWrap("Виды местности", terrain));
   }
   panel.append(toggle, el("p", "brush-hint", mapBrushMode === "boundary"
-    ? "Клик по гексу меняет только его контур. Картинка и местность сохраняются."
-    : "Клик по гексу меняет только местность."));
+    ? `Клик по ячейке меняет только контур ${cellName}. Картинка и местность сохраняются.`
+    : "Клик по ячейке применяет выбранное сочетание видов местности. Первый выбранный тип задаёт подложку."));
   return panel;
 }
 
@@ -3089,12 +3182,16 @@ function boundaryColorPalette(colorControl, onChange) {
   return palette;
 }
 
-function buildHexBoundaryPreview(data, key) {
+function buildHexBoundaryPreview(data, key, region = null) {
+  const squareGrid = isSquareRegion(region);
   const preview = el("div", "hex-preview-stack");
-  preview.append(el("div", "hex-surface preview-surface"));
+  preview.classList.toggle("square-preview-stack", squareGrid);
+  preview.append(el("div", `hex-surface preview-surface ${squareGrid ? "square-surface" : ""}`));
   const layers = Array.isArray(data) ? data : normalizeBoundaryLayers(data.boundaryLayers, data);
   layers.forEach((layer, index) => {
-    const overlay = hexBoundaryOverlay(layer, `${key}-${index}`);
+    const overlay = squareGrid
+      ? squareBoundaryOverlay(layer, `${key}-${index}`)
+      : hexBoundaryOverlay(layer, `${key}-${index}`);
     overlay.style.zIndex = String(3 + index);
     preview.append(overlay);
   });
@@ -3191,14 +3288,104 @@ function hexBoundaryOverlay(data, key) {
   return svg;
 }
 
+function squareBoundaryOverlay(data, key) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("preserveAspectRatio", "none");
+  const style = data.style || data.boundaryStyle || "solid";
+  svg.classList.add("hex-boundary", "square-boundary", `boundary-${style}`);
+  svg.setAttribute("aria-hidden", "true");
+  const edges = {
+    top: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+    topRight: [{ x: 100, y: 0 }, { x: 100, y: 100 }],
+    bottom: [{ x: 100, y: 100 }, { x: 0, y: 100 }],
+    topLeft: [{ x: 0, y: 100 }, { x: 0, y: 0 }],
+  };
+  const sourceSides = normalizeBoundarySides(data.sides || data.boundarySides);
+  const selectedSides = [
+    sourceSides.includes("top") ? "top" : "",
+    sourceSides.includes("topRight") || sourceSides.includes("bottomRight") ? "topRight" : "",
+    sourceSides.includes("bottom") ? "bottom" : "",
+    sourceSides.includes("topLeft") || sourceSides.includes("bottomLeft") ? "topLeft" : "",
+  ].filter(Boolean);
+  if (!selectedSides.length) return svg;
+  const colorValue = data.color || data.boundaryColor || "";
+  const color = /^#[0-9a-f]{6}$/i.test(colorValue) ? colorValue : "#d4a74f";
+  const edgeLine = (start, end, className, stroke = color, scale = 1) => {
+    const shape = document.createElementNS(ns, "line");
+    const scalePoint = (point) => ({
+      x: 50 + (point.x - 50) * scale,
+      y: 50 + (point.y - 50) * scale,
+    });
+    const scaledStart = scalePoint(start);
+    const scaledEnd = scalePoint(end);
+    shape.setAttribute("x1", scaledStart.x);
+    shape.setAttribute("y1", scaledStart.y);
+    shape.setAttribute("x2", scaledEnd.x);
+    shape.setAttribute("y2", scaledEnd.y);
+    shape.setAttribute("fill", "none");
+    shape.setAttribute("stroke", stroke);
+    shape.setAttribute("vector-effect", "non-scaling-stroke");
+    shape.setAttribute("stroke-linejoin", "round");
+    shape.setAttribute("stroke-linecap", "round");
+    shape.classList.add(className);
+    return shape;
+  };
+  const appendEdges = (className, stroke = color, scale = 1) => {
+    selectedSides.forEach((side) => svg.append(edgeLine(edges[side][0], edges[side][1], className, stroke, scale)));
+  };
+  const boundaryImage = data.image || data.boundaryImage || "";
+  if (style === "custom" && boundaryImage) {
+    const defs = document.createElementNS(ns, "defs");
+    const pattern = document.createElementNS(ns, "pattern");
+    const patternId = `square-boundary-${String(key).replace(/[^a-z0-9]/gi, "-")}-${Math.random().toString(36).slice(2)}`;
+    pattern.setAttribute("id", patternId);
+    pattern.setAttribute("patternUnits", "userSpaceOnUse");
+    pattern.setAttribute("width", "20");
+    pattern.setAttribute("height", "20");
+    const image = document.createElementNS(ns, "image");
+    image.setAttribute("href", boundaryImage);
+    image.setAttribute("width", "20");
+    image.setAttribute("height", "20");
+    image.setAttribute("preserveAspectRatio", "xMidYMid slice");
+    pattern.append(image);
+    defs.append(pattern);
+    svg.append(defs);
+    appendEdges("boundary-custom-stroke", `url(#${patternId})`);
+    return svg;
+  }
+  if (style === "double") {
+    appendEdges("boundary-double-outer");
+    appendEdges("boundary-double-inner", color, 0.94);
+  } else if (style === "wall") {
+    appendEdges("boundary-wall-base", "#171b1c");
+    appendEdges("boundary-wall-top");
+  } else if (style === "traps") {
+    appendEdges("boundary-trap-base", "#171b1c");
+    appendEdges("boundary-trap-marks");
+  } else if (style === "runes") {
+    appendEdges("boundary-rune-glow");
+    appendEdges("boundary-rune-marks");
+  } else {
+    appendEdges("boundary-stroke");
+  }
+  return svg;
+}
+
 function hexKey(q, r) {
   return `${q},${r}`;
 }
 
 function hexEditor(region, key, data) {
   const form = el("form", "inspector-form");
+  const squareGrid = isSquareRegion(region);
+  const cellName = squareGrid ? "клетки" : "гекса";
+  const boundaryOptions = boundarySideOptionsFor(region);
+  const allBoundarySides = boundarySideIdsFor(region);
   const title = input(data.title);
-  const terrain = selectInput(hexTerrains, data.terrain);
+  const terrains = checkboxList(hexTerrains.filter(([value]) => value !== "пусто"), terrainValues(data));
+  terrains.classList.add("terrain-checkbox-list");
   const visible = document.createElement("input");
   visible.type = "checkbox";
   visible.checked = data.visible;
@@ -3219,13 +3406,14 @@ function hexEditor(region, key, data) {
   );
   let tileImage = data.tileImage || "";
   const tileFit = selectInput([
-    ["cover", "Обрезать по гексу"],
+    ["cover", `Обрезать по ${squareGrid ? "клетке" : "гексу"}`],
     ["contain", "Вписать целиком"],
   ], data.tileFit || "cover");
   const tileInput = document.createElement("input");
   tileInput.type = "file";
   tileInput.accept = "image/png,image/jpeg,image/webp,image/gif";
   const tilePreview = el("div", "hex-tile-preview");
+  tilePreview.classList.toggle("square-tile-preview", squareGrid);
   const tilePreviewImg = document.createElement("img");
   tilePreview.append(tilePreviewImg);
   function updateTilePreview() {
@@ -3240,7 +3428,10 @@ function hexEditor(region, key, data) {
     updateTilePreview();
   });
   updateTilePreview();
-  const boundaryLayers = normalizeBoundaryLayers(data.boundaryLayers, data).map((layer) => ({ ...layer, sides: [...layer.sides] }));
+  const boundaryLayers = normalizeBoundaryLayers(data.boundaryLayers, data).map((layer) => ({
+    ...layer,
+    sides: adaptBoundarySidesForRegion(region, layer.sides),
+  }));
   const boundaryLayersList = el("div", "boundary-layer-list span-2");
   const boundaryCombinedPreview = el("div", "boundary-editor-preview");
   const boundaryCombinedWrap = labelWrap("Итоговый контур", boundaryCombinedPreview, "span-2");
@@ -3251,7 +3442,7 @@ function hexEditor(region, key, data) {
   });
   const addBoundaryLayerWrap = actionRow([addBoundaryLayerButton], "span-2");
   const syncBoundaryLayerCards = () => {
-    boundaryCombinedPreview.replaceChildren(buildHexBoundaryPreview(boundaryLayers, `combined-${key}`));
+    boundaryCombinedPreview.replaceChildren(buildHexBoundaryPreview(boundaryLayers, `combined-${key}`, region));
     addBoundaryLayerButton.disabled = boundaryLayers.length >= 6;
     addBoundaryLayerButton.textContent = boundaryLayers.length >= 6 ? "Лимит слоев достигнут" : "Добавить новый слой";
   };
@@ -3272,12 +3463,12 @@ function hexEditor(region, key, data) {
       updatePreview();
     });
     const coverage = selectInput([
-      ["all", "Весь гекс"],
+      ["all", squareGrid ? "Вся клетка" : "Весь гекс"],
       ["custom", "Выбрать грани"],
-    ], layer.sides.length === hexBoundarySideIds.length ? "all" : "custom");
-    const sides = checkboxList(hexBoundarySideOptions, layer.sides);
+    ], allBoundarySides.every((side) => layer.sides.includes(side)) ? "all" : "custom");
+    const sides = checkboxList(boundaryOptions, layer.sides);
     sides.classList.add("hex-side-list");
-    const sidesWrap = labelWrap("Грани гекса", sides, "span-2");
+    const sidesWrap = labelWrap(`Грани ${cellName}`, sides, "span-2");
     const imageInput = document.createElement("input");
     imageInput.type = "file";
     imageInput.accept = "image/png,image/jpeg,image/webp,image/gif";
@@ -3286,11 +3477,11 @@ function hexEditor(region, key, data) {
     const updatePreview = () => {
       layer.style = style.value;
       layer.color = color.value;
-      layer.sides = coverage.value === "all" ? [...hexBoundarySideIds] : checkedValues(sides);
-      if (!layer.sides.length) layer.sides = [hexBoundarySideIds[0]];
+      layer.sides = coverage.value === "all" ? [...allBoundarySides] : checkedValues(sides);
+      if (!layer.sides.length) layer.sides = [allBoundarySides[0]];
       sidesWrap.classList.toggle("is-hidden", coverage.value !== "custom");
       imageWrap.classList.toggle("is-hidden", style.value !== "custom");
-      preview.replaceChildren(buildHexBoundaryPreview([layer], `layer-${key}-${layer.id}`));
+      preview.replaceChildren(buildHexBoundaryPreview([layer], `layer-${key}-${layer.id}`, region));
       syncBoundaryLayerCards();
     };
     style.addEventListener("change", updatePreview);
@@ -3307,7 +3498,7 @@ function hexEditor(region, key, data) {
     });
     card.append(
       header,
-      labelWrap("Контур гекса", style),
+      labelWrap(`Контур ${cellName}`, style),
       labelWrap("Цвет принадлежности", fragment([color, palette])),
       labelWrap("Покрытие контура", coverage),
       sidesWrap,
@@ -3319,7 +3510,7 @@ function hexEditor(region, key, data) {
   function renderBoundaryLayers() {
     boundaryLayersList.replaceChildren();
     if (!boundaryLayers.length) {
-      boundaryLayersList.append(el("p", "muted", "Контуров пока нет. Добавь слой, чтобы выделить гекс."));
+      boundaryLayersList.append(el("p", "muted", `Контуров пока нет. Добавь слой, чтобы выделить ${squareGrid ? "клетку" : "гекс"}.`));
     } else {
       boundaryLayers.forEach((layer, index) => boundaryLayersList.append(createBoundaryLayerCard(layer, index)));
     }
@@ -3328,9 +3519,9 @@ function hexEditor(region, key, data) {
   renderBoundaryLayers();
   form.append(
     labelWrap("Название", title),
-    labelWrap("Местность", terrain),
+    labelWrap("Виды местности", terrains),
     checkboxWrap("Видно игрокам", visible),
-    labelWrap("Картинка гекса", fragment([tileInput, tilePreview])),
+    labelWrap(`Картинка ${cellName}`, fragment([tileInput, tilePreview])),
     labelWrap("Подгонка картинки", tileFit),
     boundaryLayersList,
     addBoundaryLayerWrap,
@@ -3342,13 +3533,13 @@ function hexEditor(region, key, data) {
     labelWrap("Заметки игрокам", notes),
     labelWrap("GM-заметки", gmNotes),
     actionRow([
-      button("Сохранить гекс", "primary-button", null, "submit"),
+      button(`Сохранить ${squareGrid ? "клетку" : "гекс"}`, "primary-button", null, "submit"),
       button("Убрать картинку", "ghost-button", () => {
         tileImage = "";
         updateTilePreview();
       }),
-      button("Очистить гекс", "ghost-button", () => {
-        if (!confirm(`Очистить гекс ${key}?`)) return;
+      button(`Очистить ${squareGrid ? "клетку" : "гекс"}`, "ghost-button", () => {
+        if (!confirm(`Очистить ${squareGrid ? "клетку" : "гекс"} ${key}?`)) return;
         delete region.hexes[key];
         saveState();
         render();
@@ -3357,9 +3548,11 @@ function hexEditor(region, key, data) {
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    const selectedTerrains = normalizeTerrains(checkedValues(terrains));
     const nextHex = {
       title: title.value,
-      terrain: terrain.value,
+      terrain: selectedTerrains[0] || "пусто",
+      terrains: selectedTerrains,
       visible: visible.checked,
       notes: notes.value,
       gmNotes: gmNotes.value,
@@ -3385,7 +3578,7 @@ function deleteMapRegion(region) {
     alert("Нельзя удалить последнюю карту атласа.");
     return;
   }
-  if (!confirm(`Удалить карту "${region.title}"? Это удалит все гексы и заметки этой карты.`)) return;
+  if (!confirm(`Удалить карту "${region.title}"? Это удалит все ячейки и заметки этой карты.`)) return;
   state.map.regions = state.map.regions.filter((item) => item.id !== region.id);
   const nextRegion = visibleMapRegions()[0] ?? state.map.regions[0];
   state.map.activeRegionId = nextRegion?.id ?? "";
@@ -3400,6 +3593,10 @@ function regionEditor(region) {
   const form = el("form", "inspector-form compact");
   const title = input(region.title);
   const type = selectInput(mapTypes, region.type || "Регион");
+  const gridType = selectInput([
+    ["hex", "Гексагональная — регионы и путешествия"],
+    ["square", "Квадратная — поселения и здания"],
+  ], isSquareRegion(region) ? "square" : "hex");
   const description = textarea(region.description || "");
   const isPublic = document.createElement("input");
   isPublic.type = "checkbox";
@@ -3422,11 +3619,12 @@ function regionEditor(region) {
   form.append(
     labelWrap("Название карты", title),
     labelWrap("Тип карты", type),
+    labelWrap("Тип сетки", gridType),
     checkboxWrap("Видно игрокам", isPublic),
     labelWrap("Описание в атласе", description, "span-2"),
     labelWrap("Колонки", cols),
     labelWrap("Ряды", rows),
-    labelWrap("Размер гекса", hexSize),
+    labelWrap("Размер ячейки", hexSize),
     labelWrap("Сдвиг X", offsetX),
     labelWrap("Сдвиг Y", offsetY),
     labelWrap("Фоновая подложка", imageInput, "span-2"),
@@ -3444,6 +3642,7 @@ function regionEditor(region) {
     event.preventDefault();
     region.title = title.value;
     region.type = type.value;
+    region.gridType = gridType.value;
     region.description = description.value;
     region.public = isPublic.checked;
     region.grid = {
