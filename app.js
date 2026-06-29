@@ -735,6 +735,7 @@ let skillSearchTerm = "";
 let activeGalleryTag = "";
 let mapZoom = state.map.zoom || 1;
 let mapScroll = { left: 0, top: 0 };
+let mapPanelScroll = { atlas: 0, inspector: 0 };
 let mapBrushTerrain = "лес";
 let mapBrushEnabled = false;
 let mapBrushMode = "terrain";
@@ -777,6 +778,7 @@ mapBrushBoundaryMode = savedUiState.mapBrushBoundaryMode || mapBrushBoundaryMode
 mapBrushBoundarySides = normalizeBoundarySides(savedUiState.mapBrushBoundarySides);
 mapZoom = Number(savedUiState.mapZoom || mapZoom);
 mapScroll = savedUiState.mapScroll || mapScroll;
+mapPanelScroll = savedUiState.mapPanelScroll || mapPanelScroll;
 if (savedUiState.mapActiveRegionId) state.map.activeRegionId = savedUiState.mapActiveRegionId;
 if (savedUiState.mapSelectedHex) state.map.selectedHex = savedUiState.mapSelectedHex;
 
@@ -840,6 +842,7 @@ function saveUiState() {
       mapSelectedHex: state.map.selectedHex,
       mapZoom,
       mapScroll,
+      mapPanelScroll,
       mapBrushTerrain,
       mapBrushEnabled,
       mapBrushMode,
@@ -992,12 +995,14 @@ function normalizeMapRegions(regions) {
           boundaryStyle: "none",
           boundaryImage: "",
           boundarySides: [...hexBoundarySideIds],
+          boundaryLayers: [],
           ...value,
           objects: Array.isArray(value.objects) ? value.objects : csv(value.objects ?? ""),
           wikiLinks: Array.isArray(value.wikiLinks) ? value.wikiLinks : csv(value.wikiLinks ?? ""),
           questLinks: Array.isArray(value.questLinks) ? value.questLinks : csv(value.questLinks ?? ""),
           mapLinks: Array.isArray(value.mapLinks) ? value.mapLinks : csv(value.mapLinks ?? ""),
           boundarySides: normalizeBoundarySides(value.boundarySides),
+          boundaryLayers: normalizeBoundaryLayers(value.boundaryLayers, value),
         },
       ])
     ),
@@ -1008,6 +1013,57 @@ function normalizeBoundarySides(sides) {
   if (sides == null) return [...hexBoundarySideIds];
   const values = Array.isArray(sides) ? sides : csv(sides);
   return values.map((value) => String(value)).filter((value) => hexBoundarySideIds.includes(value));
+}
+
+function createBoundaryLayer(source = {}) {
+  return normalizeBoundaryLayer({
+    id: source.id,
+    style: source.style || source.boundaryStyle || "solid",
+    color: source.color || source.boundaryColor || "#d4a74f",
+    image: source.image || source.boundaryImage || "",
+    sides: source.sides || source.boundarySides || hexBoundarySideIds,
+  });
+}
+
+function normalizeBoundaryLayer(layer = {}) {
+  const styleValue = layer.style || layer.boundaryStyle;
+  const style = hexBoundaryStyles.some(([value]) => value === styleValue) && styleValue !== "none" ? styleValue : "solid";
+  return {
+    id: String(layer.id || crypto.randomUUID?.() || `boundary-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`),
+    style,
+    color: /^#[0-9a-f]{6}$/i.test(layer.color || layer.boundaryColor || "") ? (layer.color || layer.boundaryColor) : "#d4a74f",
+    image: typeof (layer.image || layer.boundaryImage) === "string" ? (layer.image || layer.boundaryImage) : "",
+    sides: normalizeBoundarySides(layer.sides || layer.boundarySides),
+  };
+}
+
+function normalizeBoundaryLayers(layers, legacySource = {}) {
+  const sourceLayers = Array.isArray(layers) ? layers : [];
+  const normalized = (sourceLayers.length
+    ? sourceLayers
+    : legacySource.boundaryStyle && legacySource.boundaryStyle !== "none"
+      ? [createBoundaryLayer(legacySource)]
+      : [])
+    .map((layer) => normalizeBoundaryLayer(layer))
+    .filter((layer) => layer.style !== "none" && layer.sides.length)
+    .slice(0, 6);
+  return normalized;
+}
+
+function syncLegacyBoundaryFields(hex) {
+  const first = normalizeBoundaryLayers(hex.boundaryLayers, hex)[0];
+  if (first) {
+    hex.boundaryStyle = first.style;
+    hex.boundaryColor = first.color;
+    hex.boundaryImage = first.image;
+    hex.boundarySides = [...first.sides];
+  } else {
+    hex.boundaryStyle = "none";
+    hex.boundaryColor = "#d4a74f";
+    hex.boundaryImage = "";
+    hex.boundarySides = [...hexBoundarySideIds];
+  }
+  return hex;
 }
 
 function normalizeWikiArticle(article) {
@@ -1492,6 +1548,7 @@ async function loadCloudState() {
   if (uiState.mapSelectedHex) state.map.selectedHex = uiState.mapSelectedHex;
   mapZoom = Number(uiState.mapZoom || state.map.zoom || 1);
   mapScroll = uiState.mapScroll || mapScroll;
+  mapPanelScroll = uiState.mapPanelScroll || mapPanelScroll;
   await loadCloudRolls();
   renderCharacterSelect();
   render();
@@ -1626,6 +1683,9 @@ function compactStateForStorage(source) {
     Object.values(region.hexes ?? {}).forEach((hex) => {
       if (isEmbeddedImage(hex.tileImage)) hex.tileImage = "";
       if (isEmbeddedImage(hex.boundaryImage)) hex.boundaryImage = "";
+      (hex.boundaryLayers ?? []).forEach((layer) => {
+        if (isEmbeddedImage(layer.image)) layer.image = "";
+      });
     });
   });
   compact.rolls = compact.rolls?.slice(0, 80) ?? [];
@@ -2499,6 +2559,7 @@ function selectMapRegion(regionId) {
   state.map.activeRegionId = region.id;
   state.map.selectedHex = "0,0";
   mapScroll = { left: 0, top: 0 };
+  mapPanelScroll = { atlas: 0, inspector: 0 };
   saveState();
   render();
 }
@@ -2524,6 +2585,7 @@ function createMapRegion() {
   state.map.activeRegionId = region.id;
   state.map.selectedHex = "0,0";
   mapScroll = { left: 0, top: 0 };
+  mapPanelScroll = { atlas: 0, inspector: 0 };
   saveState();
   render();
 }
@@ -2542,6 +2604,7 @@ function renderMap() {
   }
   const selected = getHex(region, state.map.selectedHex);
   const layout = el("div", "map-layout");
+  layout.classList.add("is-restoring-scroll");
   const atlas = mapAtlasPanel(region);
   const stage = el("section", "hex-map-stage");
   stage.addEventListener("scroll", () => {
@@ -2559,10 +2622,16 @@ function renderMap() {
   stage.append(mapZoomControls(), viewport);
 
   const panel = mapInspector(region, selected);
+  atlas.addEventListener("scroll", () => {
+    mapPanelScroll.atlas = atlas.scrollTop;
+  });
+  panel.addEventListener("scroll", () => {
+    mapPanelScroll.inspector = panel.scrollTop;
+  });
 
   layout.append(atlas, stage, panel);
   root.append(layout);
-  restoreMapScroll(stage);
+  restoreMapScroll(stage, atlas, panel, layout);
   return root;
 }
 
@@ -2760,15 +2829,24 @@ function openQuest(questId) {
   setView("quests");
 }
 
-function restoreMapScroll(stage) {
+function restoreMapScroll(stage, atlas, inspector, layout) {
   const restore = () => {
     stage.scrollLeft = mapScroll.left;
     stage.scrollTop = mapScroll.top;
+    if (atlas) atlas.scrollTop = mapPanelScroll.atlas;
+    if (inspector) inspector.scrollTop = mapPanelScroll.inspector;
   };
+  restore();
   if (typeof requestAnimationFrame === "function") {
-    requestAnimationFrame(restore);
+    requestAnimationFrame(() => {
+      restore();
+      layout?.classList.remove("is-restoring-scroll");
+    });
   } else {
-    setTimeout(restore, 0);
+    setTimeout(() => {
+      restore();
+      layout?.classList.remove("is-restoring-scroll");
+    }, 0);
   }
 }
 
@@ -2812,6 +2890,7 @@ function getHex(region, key) {
       boundaryStyle: "none",
       boundaryImage: "",
       boundarySides: [...hexBoundarySideIds],
+      boundaryLayers: [],
     };
   }
   return region.hexes[key];
@@ -2828,7 +2907,7 @@ function hexGrid(region) {
     for (let r = 0; r < rows; r += 1) {
       const key = hexKey(q, r);
       const data = region.hexes[key];
-      const boundarySides = data ? normalizeBoundarySides(data.boundarySides) : [];
+      const boundaryLayers = data ? normalizeBoundaryLayers(data.boundaryLayers, data) : [];
       const objectCount = data?.objects?.length ?? 0;
       const linkCount = (data?.wikiLinks?.length ?? 0) + (data?.questLinks?.length ?? 0) + (data?.mapLinks?.length ?? 0);
       const hasContent = Boolean(
@@ -2839,17 +2918,22 @@ function hexGrid(region) {
             data.notes ||
             data.gmNotes ||
             data.tileImage ||
-            ((data.boundaryStyle && data.boundaryStyle !== "none") && boundarySides.length) ||
+            boundaryLayers.length ||
             (data.terrain && data.terrain !== "пусто"))
       );
       const hex = button("", `hex-cell ${hasContent ? "has-data" : ""} ${state.map.selectedHex === key ? "selected" : ""}`, () => {
         if (isAdmin && mapBrushEnabled) {
           const current = getHex(region, key);
           if (mapBrushMode === "boundary") {
-            current.boundaryStyle = mapBrushBoundaryStyle;
-            current.boundaryColor = mapBrushBoundaryColor;
-            current.boundaryImage = mapBrushBoundaryStyle === "custom" ? mapBrushBoundaryImage : "";
-            current.boundarySides = mapBrushBoundaryMode === "custom" ? [...mapBrushBoundarySides] : [...hexBoundarySideIds];
+            current.boundaryLayers = mapBrushBoundaryStyle === "none"
+              ? []
+              : [createBoundaryLayer({
+                style: mapBrushBoundaryStyle,
+                color: mapBrushBoundaryColor,
+                image: mapBrushBoundaryStyle === "custom" ? mapBrushBoundaryImage : "",
+                sides: mapBrushBoundaryMode === "custom" ? mapBrushBoundarySides : hexBoundarySideIds,
+              })];
+            syncLegacyBoundaryFields(current);
           } else {
             current.terrain = mapBrushTerrain;
           }
@@ -2877,9 +2961,11 @@ function hexGrid(region) {
         surface.append(img);
       }
       hex.append(surface);
-      if (data?.boundaryStyle && data.boundaryStyle !== "none" && boundarySides.length) {
-        hex.append(hexBoundaryOverlay({ ...data, boundarySides }, key));
-      }
+      boundaryLayers.forEach((layer, index) => {
+        const overlay = hexBoundaryOverlay(layer, `${key}-${index}`);
+        overlay.style.zIndex = String(3 + index);
+        hex.append(overlay);
+      });
       if (objectCount || linkCount) hex.append(el("span", "hex-label", String(objectCount + linkCount)));
       grid.append(hex);
     }
@@ -2941,6 +3027,7 @@ function mapBrushPanel() {
   });
   const boundarySides = checkboxList(hexBoundarySideOptions, mapBrushBoundarySides);
   boundarySides.classList.add("hex-side-list");
+  const boundarySidesWrap = labelWrap("Грани гекса", boundarySides);
   boundarySides.addEventListener("change", () => {
     mapBrushBoundarySides = checkedValues(boundarySides);
     saveUiState();
@@ -2960,12 +3047,13 @@ function mapBrushPanel() {
   });
   panel.append(labelWrap("Режим кисти", mode));
   if (mapBrushMode === "boundary") {
+    boundarySidesWrap.classList.toggle("is-hidden", mapBrushBoundaryMode !== "custom");
     panel.append(
       labelWrap("Вид контура", boundaryStyle),
       labelWrap("Цвет принадлежности", fragment([boundaryColor, palette])),
       labelWrap("Покрытие контура", boundaryCoverage)
     );
-    if (mapBrushBoundaryMode === "custom") panel.append(labelWrap("Грани гекса", boundarySides));
+    panel.append(boundarySidesWrap);
     if (mapBrushBoundaryStyle === "custom") panel.append(labelWrap("Текстура контура", boundaryFile));
   } else {
     panel.append(labelWrap("Местность", terrain));
@@ -3004,9 +3092,12 @@ function boundaryColorPalette(colorControl, onChange) {
 function buildHexBoundaryPreview(data, key) {
   const preview = el("div", "hex-preview-stack");
   preview.append(el("div", "hex-surface preview-surface"));
-  if (data.boundaryStyle && data.boundaryStyle !== "none" && normalizeBoundarySides(data.boundarySides).length) {
-    preview.append(hexBoundaryOverlay(data, key));
-  }
+  const layers = Array.isArray(data) ? data : normalizeBoundaryLayers(data.boundaryLayers, data);
+  layers.forEach((layer, index) => {
+    const overlay = hexBoundaryOverlay(layer, `${key}-${index}`);
+    overlay.style.zIndex = String(3 + index);
+    preview.append(overlay);
+  });
   return preview;
 }
 
@@ -3015,7 +3106,8 @@ function hexBoundaryOverlay(data, key) {
   const svg = document.createElementNS(ns, "svg");
   svg.setAttribute("viewBox", "0 0 100 86.6");
   svg.setAttribute("preserveAspectRatio", "none");
-  svg.classList.add("hex-boundary", `boundary-${data.boundaryStyle}`);
+  const style = data.style || data.boundaryStyle || "solid";
+  svg.classList.add("hex-boundary", `boundary-${style}`);
   svg.setAttribute("aria-hidden", "true");
   const points = [
     { x: 25, y: 0 },
@@ -3026,11 +3118,12 @@ function hexBoundaryOverlay(data, key) {
     { x: 0, y: 43.3 },
   ];
   const sideIndexById = Object.fromEntries(hexBoundarySideIds.map((id, index) => [id, index]));
-  const selectedSideIndexes = normalizeBoundarySides(data.boundarySides)
+  const selectedSideIndexes = normalizeBoundarySides(data.sides || data.boundarySides)
     .map((id) => sideIndexById[id])
     .filter((index) => Number.isInteger(index));
   if (!selectedSideIndexes.length) return svg;
-  const color = /^#[0-9a-f]{6}$/i.test(data.boundaryColor || "") ? data.boundaryColor : "#d4a74f";
+  const colorValue = data.color || data.boundaryColor || "";
+  const color = /^#[0-9a-f]{6}$/i.test(colorValue) ? colorValue : "#d4a74f";
   const edgeLine = (start, end, className, stroke = color, scale = 1) => {
     const shape = document.createElementNS(ns, "line");
     const scaledStart = {
@@ -3059,7 +3152,8 @@ function hexBoundaryOverlay(data, key) {
     });
   };
 
-  if (data.boundaryStyle === "custom" && data.boundaryImage) {
+  const boundaryImage = data.image || data.boundaryImage || "";
+  if (style === "custom" && boundaryImage) {
     const defs = document.createElementNS(ns, "defs");
     const pattern = document.createElementNS(ns, "pattern");
     const patternId = `hex-boundary-${String(key).replace(/[^a-z0-9]/gi, "-")}-${Math.random().toString(36).slice(2)}`;
@@ -3068,7 +3162,7 @@ function hexBoundaryOverlay(data, key) {
     pattern.setAttribute("width", "20");
     pattern.setAttribute("height", "20");
     const image = document.createElementNS(ns, "image");
-    image.setAttribute("href", data.boundaryImage);
+    image.setAttribute("href", boundaryImage);
     image.setAttribute("width", "20");
     image.setAttribute("height", "20");
     image.setAttribute("preserveAspectRatio", "xMidYMid slice");
@@ -3079,16 +3173,16 @@ function hexBoundaryOverlay(data, key) {
     return svg;
   }
 
-  if (data.boundaryStyle === "double") {
+  if (style === "double") {
     appendEdges("boundary-double-outer");
     appendEdges("boundary-double-inner", color, 0.9);
-  } else if (data.boundaryStyle === "wall") {
+  } else if (style === "wall") {
     appendEdges("boundary-wall-base", "#171b1c");
     appendEdges("boundary-wall-top");
-  } else if (data.boundaryStyle === "traps") {
+  } else if (style === "traps") {
     appendEdges("boundary-trap-base", "#171b1c");
     appendEdges("boundary-trap-marks");
-  } else if (data.boundaryStyle === "runes") {
+  } else if (style === "runes") {
     appendEdges("boundary-rune-glow");
     appendEdges("boundary-rune-marks");
   } else {
@@ -3146,57 +3240,101 @@ function hexEditor(region, key, data) {
     updateTilePreview();
   });
   updateTilePreview();
-  let boundaryImage = data.boundaryImage || "";
-  const boundaryStyle = selectInput(hexBoundaryStyles, data.boundaryStyle || "none");
-  const boundaryColor = colorInput(data.boundaryColor || "#d4a74f");
-  const boundaryPalette = boundaryColorPalette(boundaryColor, () => {});
-  const boundaryCoverage = selectInput([
-    ["all", "Весь гекс"],
-    ["custom", "Выбрать грани"],
-  ], normalizeBoundarySides(data.boundarySides).length === hexBoundarySideIds.length ? "all" : "custom");
-  const boundarySides = checkboxList(hexBoundarySideOptions, normalizeBoundarySides(data.boundarySides));
-  boundarySides.classList.add("hex-side-list");
-  const boundaryInput = document.createElement("input");
-  boundaryInput.type = "file";
-  boundaryInput.accept = "image/png,image/jpeg,image/webp,image/gif";
-  const boundaryPreview = el("div", "boundary-editor-preview");
-  const boundarySidesWrap = labelWrap("Грани гекса", boundarySides);
-  const currentBoundarySides = () => boundaryCoverage.value === "all" ? [...hexBoundarySideIds] : checkedValues(boundarySides);
-  function updateBoundaryPreview() {
-    boundaryPreview.replaceChildren();
-    const previewData = {
-      boundaryStyle: boundaryStyle.value,
-      boundaryColor: boundaryColor.value,
-      boundaryImage,
-      boundarySides: currentBoundarySides(),
-    };
-    boundaryPreview.append(buildHexBoundaryPreview(previewData, `preview-${key}`));
-    boundarySidesWrap.hidden = boundaryCoverage.value !== "custom";
-  }
-  boundaryStyle.addEventListener("change", updateBoundaryPreview);
-  boundaryColor.addEventListener("input", updateBoundaryPreview);
-  boundaryPalette.addEventListener("click", () => requestAnimationFrame(updateBoundaryPreview));
-  boundaryCoverage.addEventListener("change", updateBoundaryPreview);
-  boundarySides.addEventListener("change", updateBoundaryPreview);
-  boundaryInput.addEventListener("change", async () => {
-    const file = boundaryInput.files?.[0];
-    if (!file) return;
-    boundaryImage = await imageFileToUrl(file, "map-boundaries");
-    boundaryStyle.value = "custom";
-    updateBoundaryPreview();
+  const boundaryLayers = normalizeBoundaryLayers(data.boundaryLayers, data).map((layer) => ({ ...layer, sides: [...layer.sides] }));
+  const boundaryLayersList = el("div", "boundary-layer-list span-2");
+  const boundaryCombinedPreview = el("div", "boundary-editor-preview");
+  const boundaryCombinedWrap = labelWrap("Итоговый контур", boundaryCombinedPreview, "span-2");
+  const addBoundaryLayerButton = button("Добавить новый слой", "ghost-button", () => {
+    if (boundaryLayers.length >= 6) return;
+    boundaryLayers.push(createBoundaryLayer());
+    renderBoundaryLayers();
   });
-  updateBoundaryPreview();
+  const addBoundaryLayerWrap = actionRow([addBoundaryLayerButton], "span-2");
+  const syncBoundaryLayerCards = () => {
+    boundaryCombinedPreview.replaceChildren(buildHexBoundaryPreview(boundaryLayers, `combined-${key}`));
+    addBoundaryLayerButton.disabled = boundaryLayers.length >= 6;
+    addBoundaryLayerButton.textContent = boundaryLayers.length >= 6 ? "Лимит слоев достигнут" : "Добавить новый слой";
+  };
+  const createBoundaryLayerCard = (layer, index) => {
+    const card = el("section", "boundary-layer-card");
+    const header = el("div", "boundary-layer-card-head");
+    header.append(el("strong", "", `Слой ${index + 1}`));
+    header.append(button("Удалить", "ghost-button", () => {
+      const layerIndex = boundaryLayers.findIndex((item) => item.id === layer.id);
+      if (layerIndex === -1) return;
+      boundaryLayers.splice(layerIndex, 1);
+      renderBoundaryLayers();
+    }));
+    const style = selectInput(hexBoundaryStyles.filter(([value]) => value !== "none"), layer.style);
+    const color = colorInput(layer.color);
+    const palette = boundaryColorPalette(color, (value) => {
+      layer.color = value;
+      updatePreview();
+    });
+    const coverage = selectInput([
+      ["all", "Весь гекс"],
+      ["custom", "Выбрать грани"],
+    ], layer.sides.length === hexBoundarySideIds.length ? "all" : "custom");
+    const sides = checkboxList(hexBoundarySideOptions, layer.sides);
+    sides.classList.add("hex-side-list");
+    const sidesWrap = labelWrap("Грани гекса", sides, "span-2");
+    const imageInput = document.createElement("input");
+    imageInput.type = "file";
+    imageInput.accept = "image/png,image/jpeg,image/webp,image/gif";
+    const preview = el("div", "boundary-editor-preview");
+    const imageWrap = labelWrap("Своя текстура контура", fragment([imageInput, preview]), "span-2");
+    const updatePreview = () => {
+      layer.style = style.value;
+      layer.color = color.value;
+      layer.sides = coverage.value === "all" ? [...hexBoundarySideIds] : checkedValues(sides);
+      if (!layer.sides.length) layer.sides = [hexBoundarySideIds[0]];
+      sidesWrap.classList.toggle("is-hidden", coverage.value !== "custom");
+      imageWrap.classList.toggle("is-hidden", style.value !== "custom");
+      preview.replaceChildren(buildHexBoundaryPreview([layer], `layer-${key}-${layer.id}`));
+      syncBoundaryLayerCards();
+    };
+    style.addEventListener("change", updatePreview);
+    color.addEventListener("input", updatePreview);
+    palette.addEventListener("click", () => requestAnimationFrame(updatePreview));
+    coverage.addEventListener("change", updatePreview);
+    sides.addEventListener("change", updatePreview);
+    imageInput.addEventListener("change", async () => {
+      const file = imageInput.files?.[0];
+      if (!file) return;
+      layer.image = await imageFileToUrl(file, "map-boundaries");
+      style.value = "custom";
+      updatePreview();
+    });
+    card.append(
+      header,
+      labelWrap("Контур гекса", style),
+      labelWrap("Цвет принадлежности", fragment([color, palette])),
+      labelWrap("Покрытие контура", coverage),
+      sidesWrap,
+      imageWrap
+    );
+    updatePreview();
+    return card;
+  };
+  function renderBoundaryLayers() {
+    boundaryLayersList.replaceChildren();
+    if (!boundaryLayers.length) {
+      boundaryLayersList.append(el("p", "muted", "Контуров пока нет. Добавь слой, чтобы выделить гекс."));
+    } else {
+      boundaryLayers.forEach((layer, index) => boundaryLayersList.append(createBoundaryLayerCard(layer, index)));
+    }
+    syncBoundaryLayerCards();
+  }
+  renderBoundaryLayers();
   form.append(
     labelWrap("Название", title),
     labelWrap("Местность", terrain),
     checkboxWrap("Видно игрокам", visible),
     labelWrap("Картинка гекса", fragment([tileInput, tilePreview])),
     labelWrap("Подгонка картинки", tileFit),
-    labelWrap("Контур гекса", boundaryStyle),
-    labelWrap("Цвет принадлежности", fragment([boundaryColor, boundaryPalette])),
-    labelWrap("Покрытие контура", boundaryCoverage),
-    boundarySidesWrap,
-    labelWrap("Своя текстура контура", fragment([boundaryInput, boundaryPreview])),
+    boundaryLayersList,
+    addBoundaryLayerWrap,
+    boundaryCombinedWrap,
     labelWrap("Объекты, по одному на строку", objects),
     labelWrap("Связанные Wiki-статьи", wikiLinks),
     labelWrap("Связанные задания", questLinks),
@@ -3219,7 +3357,7 @@ function hexEditor(region, key, data) {
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    region.hexes[key] = {
+    const nextHex = {
       title: title.value,
       terrain: terrain.value,
       visible: visible.checked,
@@ -3231,11 +3369,10 @@ function hexEditor(region, key, data) {
       mapLinks: checkedValues(mapLinks),
       tileImage,
       tileFit: tileFit.value,
-      boundaryColor: boundaryColor.value,
-      boundaryStyle: boundaryStyle.value,
-      boundaryImage: boundaryStyle.value === "custom" ? boundaryImage : "",
-      boundarySides: currentBoundarySides(),
     };
+    nextHex.boundaryLayers = boundaryLayers.map((layer) => normalizeBoundaryLayer(layer));
+    syncLegacyBoundaryFields(nextHex);
+    region.hexes[key] = nextHex;
     saveState();
     render();
   });
@@ -3254,6 +3391,7 @@ function deleteMapRegion(region) {
   state.map.activeRegionId = nextRegion?.id ?? "";
   state.map.selectedHex = "0,0";
   mapScroll = { left: 0, top: 0 };
+  mapPanelScroll = { atlas: 0, inspector: 0 };
   saveState();
   render();
 }
