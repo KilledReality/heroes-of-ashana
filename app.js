@@ -100,7 +100,6 @@ const hexTerrains = [
   ["вода-берег-4", "Вода: берег 4"],
   ["болото", "Болото"],
   ["горы", "Горы"],
-  ["дорога", "Дорога"],
   ["город", "Город"],
   ["поселение", "Поселение"],
   ["населенный-пункт", "Населенный пункт"],
@@ -120,7 +119,6 @@ const terrainTileFiles = {
   "вода-берег-4": "assets/hex-terrain/water bereg4.png",
   болото: "assets/hex-terrain/boloto.png",
   горы: "assets/hex-terrain/mountain.png",
-  дорога: "assets/hex-terrain/grass doroga1.png",
   город: "assets/hex-terrain/village.png",
   поселение: "assets/hex-terrain/village.png",
   "населенный-пункт": "assets/hex-terrain/small village.png",
@@ -157,9 +155,16 @@ const squareBoundarySideOptions = [
   ["topLeft", "Западная грань"],
 ];
 
+const roadTypes = [
+  ["road", "Дорога"],
+  ["trail", "Тропа"],
+  ["highway", "Тракт"],
+];
+
 const terrainAliases = {
   деревня: "поселение",
   "малая-деревня": "населенный-пункт",
+  дорога: "равнина",
 };
 
 const mapTypes = [
@@ -697,7 +702,7 @@ const seedData = {
         grid: { cols: 24, rows: 16, hexSize: 96, offsetX: 24, offsetY: 24 },
         hexes: {
           "8,6": { title: "Лагерь партии", terrain: "лес", visible: true, notes: "Стартовая точка для редактирования карты Межей.", gmNotes: "", objects: ["партия", "лагерь"] },
-          "9,6": { title: "Лесная дорога", terrain: "дорога", visible: true, notes: "Дорога через чащу.", gmNotes: "", objects: ["дорога"] },
+          "9,6": { title: "Лесная дорога", terrain: "лес", terrains: ["лес"], roadType: "road", roadSides: ["topLeft", "bottomRight"], visible: true, notes: "Дорога через чащу.", gmNotes: "", objects: ["дорога"] },
           "10,6": { title: "Старое поселение", terrain: "поселение", visible: true, notes: "Небольшое поселение у дороги.", gmNotes: "", objects: ["поселение", "NPC"] },
           "11,6": { title: "Речной переход", terrain: "вода", visible: true, notes: "Место переправы.", gmNotes: "", objects: ["брод", "река"] },
         },
@@ -762,6 +767,8 @@ let mapBrushBoundaryStyle = "solid";
 let mapBrushBoundaryImage = "";
 let mapBrushBoundaryMode = "all";
 let mapBrushBoundarySides = [...hexBoundarySideIds];
+let mapBrushRoadType = "road";
+let mapBrushRoadSides = ["topLeft", "bottomRight"];
 let searchTerm = "";
 let tagTooltipTimer = null;
 let activeTagTooltip = null;
@@ -796,6 +803,10 @@ mapBrushBoundaryStyle = savedUiState.mapBrushBoundaryStyle || mapBrushBoundarySt
 mapBrushBoundaryImage = savedUiState.mapBrushBoundaryImage || mapBrushBoundaryImage;
 mapBrushBoundaryMode = savedUiState.mapBrushBoundaryMode || mapBrushBoundaryMode;
 mapBrushBoundarySides = normalizeBoundarySides(savedUiState.mapBrushBoundarySides);
+mapBrushRoadType = ["none", ...roadTypes.map(([value]) => value)].includes(savedUiState.mapBrushRoadType)
+  ? savedUiState.mapBrushRoadType
+  : mapBrushRoadType;
+mapBrushRoadSides = normalizeRoadSides(savedUiState.mapBrushRoadSides ?? mapBrushRoadSides);
 mapZoom = Number(savedUiState.mapZoom || mapZoom);
 mapScroll = savedUiState.mapScroll || mapScroll;
 mapPanelScroll = savedUiState.mapPanelScroll || mapPanelScroll;
@@ -880,6 +891,8 @@ function saveUiState() {
       mapBrushBoundaryImage,
       mapBrushBoundaryMode,
       mapBrushBoundarySides,
+      mapBrushRoadType,
+      mapBrushRoadSides,
     }));
   } catch (error) {
     console.warn("Не удалось сохранить положение интерфейса:", error.message);
@@ -1103,6 +1116,29 @@ function terrainSummary(cell) {
   return values.length ? values.map(terrainLabel).join(", ") : "Пусто";
 }
 
+function hadLegacyRoad(cell) {
+  const source = Array.isArray(cell?.terrains) ? cell.terrains : [cell?.terrain];
+  return source.some((value) => String(value || "").trim() === "дорога");
+}
+
+function normalizeRoadSides(sides) {
+  const values = Array.isArray(sides) ? sides : csv(sides ?? "");
+  return [...new Set(values.map(String).filter((value) => hexBoundarySideIds.includes(value)))];
+}
+
+function normalizeRoadType(value) {
+  return roadTypes.some(([type]) => type === value) ? value : "road";
+}
+
+function roadTypeLabel(value) {
+  return roadTypes.find(([type]) => type === value)?.[1] || "Дорога";
+}
+
+function roadSummary(cell) {
+  const sides = normalizeRoadSides(cell?.roadSides);
+  return sides.length ? roadTypeLabel(normalizeRoadType(cell?.roadType)) : "";
+}
+
 function isSquareRegion(region) {
   return region?.gridType === "square";
 }
@@ -1124,6 +1160,17 @@ function adaptBoundarySidesForRegion(region, sides) {
   if (normalized.includes("bottom")) squareSides.push("bottom");
   if (normalized.includes("topLeft") || normalized.includes("bottomLeft")) squareSides.push("topLeft");
   return squareSides.length ? squareSides : ["top"];
+}
+
+function adaptRoadSidesForRegion(region, sides) {
+  const normalized = normalizeRoadSides(sides);
+  if (!isSquareRegion(region)) return normalized;
+  const squareSides = [];
+  if (normalized.includes("top")) squareSides.push("top");
+  if (normalized.includes("topRight") || normalized.includes("bottomRight")) squareSides.push("topRight");
+  if (normalized.includes("bottom")) squareSides.push("bottom");
+  if (normalized.includes("topLeft") || normalized.includes("bottomLeft")) squareSides.push("topLeft");
+  return squareSides;
 }
 
 function normalizeMapRegions(regions) {
@@ -1158,6 +1205,8 @@ function normalizeMapRegions(regions) {
           boundaryImage: "",
           boundarySides: [...hexBoundarySideIds],
           boundaryLayers: [],
+          roadType: "road",
+          roadSides: [],
           ...value,
           terrain: normalizeTerrains(value.terrains?.length ? value.terrains : value.terrain)[0] || "пусто",
           terrains: normalizeTerrains(value.terrains?.length ? value.terrains : value.terrain),
@@ -1167,6 +1216,10 @@ function normalizeMapRegions(regions) {
           mapLinks: Array.isArray(value.mapLinks) ? value.mapLinks : csv(value.mapLinks ?? ""),
           boundarySides: normalizeBoundarySides(value.boundarySides),
           boundaryLayers: normalizeBoundaryLayers(value.boundaryLayers, value),
+          roadType: normalizeRoadType(value.roadType),
+          roadSides: normalizeRoadSides(value.roadSides?.length
+            ? value.roadSides
+            : hadLegacyRoad(value) ? ["topLeft", "bottomRight"] : []),
         },
       ])
     ),
@@ -2419,8 +2472,8 @@ function globalSearchResults(query) {
         isSquareRegion(region) ? "Клетки карты" : "Гексы",
         hex.title || `${isSquareRegion(region) ? "Клетка" : "Гекс"} ${key}`,
         `${region.title} · ${key}`,
-        hex.notes || hex.objects?.join(", ") || terrainSummary(hex),
-        [key, hex.title, terrainSummary(hex), hex.notes, isAdmin ? hex.gmNotes : "", (hex.objects ?? []).join(" ")],
+        hex.notes || hex.objects?.join(", ") || [terrainSummary(hex), roadSummary(hex)].filter(Boolean).join(", "),
+        [key, hex.title, terrainSummary(hex), roadSummary(hex), hex.notes, isAdmin ? hex.gmNotes : "", (hex.objects ?? []).join(" ")],
         () => {
           clearSearchTerm();
           state.map.activeRegionId = region.id;
@@ -2874,7 +2927,12 @@ function mapInspector(region, selected) {
   head.append(
     el("p", "eyebrow", region.title),
     el("h3", "", selected.title || `${isSquareRegion(region) ? "Клетка" : "Гекс"} ${state.map.selectedHex}`),
-    compactBadges([state.map.selectedHex, ...terrainValues(selected).map(terrainLabel), selected.visible ? "игрокам" : "скрыто"])
+    compactBadges([
+      state.map.selectedHex,
+      ...terrainValues(selected).map(terrainLabel),
+      roadSummary(selected),
+      selected.visible ? "игрокам" : "скрыто",
+    ])
   );
 
   const body = el("div", "map-inspector-body");
@@ -3089,6 +3147,8 @@ function getHex(region, key) {
       boundaryImage: "",
       boundarySides: [...hexBoundarySideIds],
       boundaryLayers: [],
+      roadType: "road",
+      roadSides: [],
     };
   }
   return region.hexes[key];
@@ -3107,6 +3167,7 @@ function hexGrid(region) {
       const key = hexKey(q, r);
       const data = region.hexes[key];
       const boundaryLayers = data ? normalizeBoundaryLayers(data.boundaryLayers, data) : [];
+      const roadSides = data ? adaptRoadSidesForRegion(region, data.roadSides) : [];
       const objectCount = data?.objects?.length ?? 0;
       const linkCount = (data?.wikiLinks?.length ?? 0) + (data?.questLinks?.length ?? 0) + (data?.mapLinks?.length ?? 0);
       const hasContent = Boolean(
@@ -3118,6 +3179,7 @@ function hexGrid(region) {
             data.gmNotes ||
             data.tileImage ||
             boundaryLayers.length ||
+            roadSides.length ||
             terrainValues(data).length)
       );
       const hex = button("", `hex-cell ${squareGrid ? "square-cell" : ""} ${hasContent ? "has-data" : ""} ${state.map.selectedHex === key ? "selected" : ""}`, () => {
@@ -3135,6 +3197,11 @@ function hexGrid(region) {
                   : boundarySideIdsFor(region),
               })];
             syncLegacyBoundaryFields(current);
+          } else if (mapBrushMode === "road") {
+            current.roadType = normalizeRoadType(mapBrushRoadType);
+            current.roadSides = mapBrushRoadType === "none"
+              ? []
+              : adaptRoadSidesForRegion(region, mapBrushRoadSides);
           } else {
             current.terrains = normalizeTerrains(mapBrushTerrains);
             current.terrain = current.terrains[0] || "пусто";
@@ -3165,6 +3232,7 @@ function hexGrid(region) {
         surface.append(img);
       }
       hex.append(surface);
+      if (roadSides.length) hex.append(roadOverlay(region, data));
       boundaryLayers.forEach((layer, index) => {
         const overlay = squareGrid
           ? squareBoundaryOverlay(layer, `${key}-${index}`)
@@ -3200,6 +3268,7 @@ function mapBrushPanel(region) {
   const panel = el("div", "brush-panel boundary-brush-panel");
   const mode = selectInput([
     ["terrain", "Местность"],
+    ["road", "Дорожное сообщение"],
     ["boundary", `Контур ${cellName}`],
   ], mapBrushMode);
   mode.addEventListener("change", () => {
@@ -3212,6 +3281,21 @@ function mapBrushPanel(region) {
   terrain.addEventListener("change", () => {
     mapBrushTerrains = normalizeTerrains(checkedValues(terrain));
     mapBrushTerrain = mapBrushTerrains[0] || "пусто";
+    saveUiState();
+  });
+  const roadType = selectInput([
+    ["none", "Убрать дорогу"],
+    ...roadTypes,
+  ], mapBrushRoadType);
+  roadType.addEventListener("change", () => {
+    mapBrushRoadType = roadType.value;
+    saveUiState();
+    render();
+  });
+  const roadSides = checkboxList(boundaryOptions, adaptRoadSidesForRegion(region, mapBrushRoadSides));
+  roadSides.classList.add("hex-side-list");
+  roadSides.addEventListener("change", () => {
+    mapBrushRoadSides = checkedValues(roadSides);
     saveUiState();
   });
   const boundaryStyle = selectInput(hexBoundaryStyles, mapBrushBoundaryStyle);
@@ -3271,12 +3355,18 @@ function mapBrushPanel(region) {
     );
     panel.append(boundarySidesWrap);
     if (mapBrushBoundaryStyle === "custom") panel.append(labelWrap("Текстура контура", boundaryFile));
+  } else if (mapBrushMode === "road") {
+    panel.append(labelWrap("Действие", roadType));
+    if (mapBrushRoadType !== "none") panel.append(labelWrap("Выходы дороги", roadSides));
   } else {
     panel.append(labelWrap("Виды местности", terrain));
   }
-  panel.append(toggle, el("p", "brush-hint", mapBrushMode === "boundary"
+  const hint = mapBrushMode === "boundary"
     ? `Клик по ячейке меняет только контур ${cellName}. Картинка и местность сохраняются.`
-    : "Клик по ячейке применяет выбранное сочетание видов местности. Первый выбранный тип задаёт подложку."));
+    : mapBrushMode === "road"
+      ? "Выбранные выходы соединяются через центр ячейки. Так создаются прямые дороги, повороты и перекрёстки."
+      : "Клик по ячейке применяет выбранное сочетание видов местности. Первый выбранный тип задаёт подложку.";
+  panel.append(toggle, el("p", "brush-hint", hint));
   return panel;
 }
 
@@ -3496,6 +3586,57 @@ function squareBoundaryOverlay(data, key) {
   return svg;
 }
 
+function roadOverlay(region, data) {
+  const ns = "http://www.w3.org/2000/svg";
+  const squareGrid = isSquareRegion(region);
+  const height = squareGrid ? 100 : 86.6;
+  const center = { x: 50, y: height / 2 };
+  const exits = squareGrid
+    ? {
+        top: { x: 50, y: 0 },
+        topRight: { x: 100, y: 50 },
+        bottom: { x: 50, y: 100 },
+        topLeft: { x: 0, y: 50 },
+      }
+    : {
+        top: { x: 50, y: 0 },
+        topRight: { x: 87.5, y: 21.65 },
+        bottomRight: { x: 87.5, y: 64.95 },
+        bottom: { x: 50, y: 86.6 },
+        bottomLeft: { x: 12.5, y: 64.95 },
+        topLeft: { x: 12.5, y: 21.65 },
+      };
+  const roadType = normalizeRoadType(data?.roadType);
+  const sides = adaptRoadSidesForRegion(region, data?.roadSides).filter((side) => exits[side]);
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 100 ${height}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.classList.add("cell-road", `road-${roadType}`);
+  svg.setAttribute("aria-hidden", "true");
+  const appendSegment = (end, className) => {
+    const line = document.createElementNS(ns, "line");
+    line.setAttribute("x1", center.x);
+    line.setAttribute("y1", center.y);
+    line.setAttribute("x2", end.x);
+    line.setAttribute("y2", end.y);
+    line.setAttribute("vector-effect", "non-scaling-stroke");
+    line.classList.add(className);
+    svg.append(line);
+  };
+  sides.forEach((side) => appendSegment(exits[side], "road-shadow"));
+  sides.forEach((side) => appendSegment(exits[side], "road-surface"));
+  if (roadType === "highway") sides.forEach((side) => appendSegment(exits[side], "road-marking"));
+  return svg;
+}
+
+function buildRoadPreview(region, roadType, roadSides) {
+  const squareGrid = isSquareRegion(region);
+  const preview = el("div", `hex-preview-stack ${squareGrid ? "square-preview-stack" : ""}`);
+  preview.append(el("div", `hex-surface preview-surface ${squareGrid ? "square-surface" : ""}`));
+  preview.append(roadOverlay(region, { roadType, roadSides }));
+  return preview;
+}
+
 function hexKey(q, r) {
   return `${q},${r}`;
 }
@@ -3509,6 +3650,31 @@ function hexEditor(region, key, data) {
   const title = input(data.title);
   const terrains = checkboxList(hexTerrains.filter(([value]) => value !== "пусто"), terrainValues(data));
   terrains.classList.add("terrain-checkbox-list");
+  const roadType = selectInput(roadTypes, normalizeRoadType(data.roadType));
+  const roadSides = checkboxList(boundaryOptions, adaptRoadSidesForRegion(region, data.roadSides));
+  roadSides.classList.add("hex-side-list");
+  const roadPreview = el("div", "boundary-editor-preview road-editor-preview");
+  const roadEditor = el("section", "road-editor span-2");
+  const updateRoadPreview = () => {
+    roadPreview.replaceChildren(buildRoadPreview(region, roadType.value, checkedValues(roadSides)));
+  };
+  roadType.addEventListener("change", updateRoadPreview);
+  roadSides.addEventListener("change", updateRoadPreview);
+  const clearRoadButton = button("Убрать дорогу", "ghost-button", () => {
+    roadSides.querySelectorAll("input[type='checkbox']").forEach((box) => {
+      box.checked = false;
+    });
+    updateRoadPreview();
+  });
+  const roadEditorHead = el("div", "road-editor-head");
+  roadEditorHead.append(el("strong", "", "Дорожное сообщение"), clearRoadButton);
+  roadEditor.append(
+    roadEditorHead,
+    labelWrap("Тип пути", roadType),
+    labelWrap("Выходы через грани", roadSides),
+    labelWrap("Предпросмотр", roadPreview)
+  );
+  updateRoadPreview();
   const visible = document.createElement("input");
   visible.type = "checkbox";
   visible.checked = data.visible;
@@ -3646,6 +3812,7 @@ function hexEditor(region, key, data) {
     checkboxWrap("Видно игрокам", visible),
     labelWrap(`Картинка ${cellName}`, fragment([tileInput, tilePreview])),
     labelWrap("Подгонка картинки", tileFit),
+    roadEditor,
     boundaryLayersList,
     addBoundaryLayerWrap,
     boundaryCombinedWrap,
@@ -3685,6 +3852,8 @@ function hexEditor(region, key, data) {
       mapLinks: checkedValues(mapLinks),
       tileImage,
       tileFit: tileFit.value,
+      roadType: normalizeRoadType(roadType.value),
+      roadSides: checkedValues(roadSides),
     };
     nextHex.boundaryLayers = boundaryLayers.map((layer) => normalizeBoundaryLayer(layer));
     syncLegacyBoundaryFields(nextHex);

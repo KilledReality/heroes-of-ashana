@@ -1895,6 +1895,59 @@ label {
   stroke-width: 6;
 }
 
+.cell-road {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.65));
+}
+
+.cell-road line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.road-shadow {
+  stroke: rgba(39, 28, 19, 0.88);
+  stroke-width: 10;
+}
+
+.road-surface {
+  stroke: #b99459;
+  stroke-width: 6;
+}
+
+.road-trail .road-shadow {
+  stroke-width: 6;
+  opacity: 0.72;
+}
+
+.road-trail .road-surface {
+  stroke: #c4aa77;
+  stroke-width: 3;
+  stroke-dasharray: 5 4;
+}
+
+.road-highway .road-shadow {
+  stroke-width: 13;
+}
+
+.road-highway .road-surface {
+  stroke: #c5a86f;
+  stroke-width: 9;
+}
+
+.road-marking {
+  stroke: rgba(244, 225, 173, 0.72);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+}
+
 .hex-label {
   position: relative;
   z-index: 4;
@@ -1914,7 +1967,6 @@ label {
 .hex-cell.selected .hex-surface {
   background: rgba(77, 169, 167, 0.34);
   border: 3px solid var(--accent-2);
-  z-index: 3;
 }
 
 .hex-surface[data-terrain="город"],
@@ -1958,12 +2010,6 @@ label {
     #687557;
 }
 
-.hex-surface[data-terrain="дорога"] {
-  background:
-    linear-gradient(25deg, transparent 42%, #b49455 43% 55%, transparent 56%),
-    #536c3d;
-}
-
 .hex-surface[data-terrain="укрепление"] {
   background:
     repeating-linear-gradient(45deg, rgba(255,255,255,.15) 0 6px, transparent 6px 12px),
@@ -1987,6 +2033,28 @@ label {
 
 .boundary-brush-panel {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.road-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(185, 148, 89, 0.34);
+  border-radius: 8px;
+  background: rgba(185, 148, 89, 0.07);
+}
+
+.road-editor-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.road-editor-preview {
+  margin-top: 0;
 }
 
 .brush-hint {
@@ -3001,8 +3069,13 @@ label {
   }
 
   .roll-builder,
-  .quest-meta-grid {
+  .quest-meta-grid,
+  .road-editor {
     grid-template-columns: 1fr;
+  }
+
+  .road-editor-head {
+    grid-column: auto;
   }
 
   .skill-edit-table {
